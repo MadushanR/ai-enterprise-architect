@@ -11,8 +11,10 @@ const git = simpleGit(process.cwd());
 
 /**
  * Write `content` to `filePath` and commit it with the supplied `message`.
+ * If the file content is identical to what was already on disk (no diff),
+ * the function returns silently without creating an empty commit.
  *
- * @param filePath  Repo-relative path to the file (e.g. "personas/agents/sa.md")
+ * @param filePath  Absolute or repo-relative path to the file
  * @param content   Full file content to write
  * @param message   Git commit message — describe WHAT changed and WHY
  */
@@ -23,5 +25,17 @@ export async function commitFile(
 ): Promise<void> {
   await writeFile(filePath, content, "utf-8");
   await git.add(filePath);
+
+  // Check whether anything is actually staged before committing.
+  // git.add on an unchanged file leaves the index clean; committing an
+  // empty index throws "nothing to commit" which would 500 the API route.
+  const status = await git.status();
+  if (status.staged.length === 0) {
+    // File was written but content was identical — no commit needed.
+    console.log(`[git-commit] no changes staged for ${filePath} — skipping commit`);
+    return;
+  }
+
   await git.commit(message);
+  console.log(`[git-commit] committed: ${message}`);
 }

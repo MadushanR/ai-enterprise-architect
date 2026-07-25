@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import simpleGit from "simple-git";
 
 const REGION_BASE_URLS: Record<string, string> = {
   "us-south": "https://us-south.ml.cloud.ibm.com",
@@ -184,6 +185,41 @@ export async function GET() {
     };
     const generatedText = wxJson.choices?.[0]?.message?.content ?? "";
 
+    // ── 5. STT provider status (task 5.4) ────────────────────────────────────
+    const sttProvider = process.env.STT_PROVIDER ?? "granite";
+    const sttConfigured =
+      sttProvider === "watson"
+        ? !!(process.env.WATSON_STT_APIKEY && process.env.WATSON_STT_URL)
+        : false; // granite endpoint not yet in public ml/v1 catalog
+
+    const sttStatus = {
+      provider: sttProvider,
+      configured: sttConfigured,
+      note: sttConfigured
+        ? "Watson STT credentials present"
+        : sttProvider === "watson"
+        ? "Watson STT: WATSON_STT_APIKEY or WATSON_STT_URL missing"
+        : "Granite Speech: endpoint not yet available in public ml/v1; set STT_PROVIDER=watson to enable",
+    };
+
+    // ── 6. simple-git status (task 5.4) ──────────────────────────────────────
+    let gitStatus: { ok: boolean; latestCommit?: string; error?: string };
+    try {
+      const git = simpleGit(process.cwd());
+      const log = await git.log({ maxCount: 1 });
+      gitStatus = {
+        ok: true,
+        latestCommit: log.latest
+          ? `${log.latest.hash.slice(0, 7)} ${log.latest.message}`
+          : "(no commits)",
+      };
+    } catch (err) {
+      gitStatus = {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
     return NextResponse.json(
       {
         ok: true,
@@ -195,6 +231,9 @@ export async function GET() {
         // Non-empty means the debate engine will fail at runtime even though
         // the connectivity check itself passed.
         missingRequiredModels: missingModels,
+        // Phase 5.4 additions
+        stt: sttStatus,
+        git: gitStatus,
       },
       { status: 200 },
     );

@@ -66,3 +66,11 @@ compliance_ref: "<glob>"            # guardian only — path glob relative to re
 - Mermaid output from the LLM must be validated (mermaid.parse) before rendering, or the UI blank-screens.
 - A persona file with malformed frontmatter will cause the loader to skip that file and log a warning;
   the debate continues with the remaining valid personas. This is by design — never hard-crash on one bad file.
+- `commitFile` in `lib/git-commit.ts` calls `git.status()` before committing; if the persona file content
+  is identical to what was already on disk, it skips the commit silently (no empty-commit error).
+- The chaos SSE handler uses a labeled `outer:` while loop — `break outer` on `done`/`error` events
+  exits the reader immediately. A plain `break` in the inner `for` loop would only exit the `for`.
+- Watson STT is only enabled when `STT_PROVIDER=watson` AND both `WATSON_STT_APIKEY` and `WATSON_STT_URL`
+  are set. Without these, `/api/audio` returns `{ transcription_unavailable: true }` with HTTP 200.
+  The UI displays an amber notice rather than an error. Granite Speech (`granite-speech-4.1-2b`) is not
+  yet available via the standard `ml/v1` REST API for multipart audio.
