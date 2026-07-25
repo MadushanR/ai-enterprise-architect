@@ -5,6 +5,10 @@
  * POST multipart/form-data with a `file` field (audio/mpeg, .mp3).
  * Returns: { transcript: string, transcription_unavailable?: boolean }
  *
+ * Dev shortcut: POST JSON { "text": "..." } to inject a transcript directly
+ * without uploading audio. Useful for testing the diagram-update pipeline
+ * when Watson STT credentials are not configured.
+ *
  * Provider selection (AGENTS.md: granite-speech-4.1-2b primary, watson-stt fallback):
  *   STT_PROVIDER=watson  → Watson Speech-to-Text REST API
  *                          requires WATSON_STT_APIKEY + WATSON_STT_URL
@@ -79,6 +83,21 @@ async function transcribeWithGranite(): Promise<never> {
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: Request): Promise<Response> {
+  // ── Dev shortcut: JSON body with { text } bypasses audio upload entirely ──
+  const ct = request.headers.get("content-type") ?? "";
+  if (ct.includes("application/json")) {
+    const body = await request.json().catch(() => null) as { text?: string } | null;
+    if (body?.text && typeof body.text === "string" && body.text.trim().length > 0) {
+      console.log(`[audio] dev text-inject mode, length=${body.text.length}`);
+      return NextResponse.json({ transcript: body.text.trim() });
+    }
+    return NextResponse.json(
+      { error: "JSON body must include a non-empty `text` field." },
+      { status: 400 }
+    );
+  }
+
+  // ── Normal multipart upload path ──────────────────────────────────────────
   let formData: FormData;
   try {
     formData = await request.formData();

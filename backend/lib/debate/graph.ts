@@ -14,7 +14,7 @@ import { debaterNode } from "@/backend/lib/debate/agents/debater";
 import { guardianNode } from "@/backend/lib/debate/agents/guardian";
 import type { DebateState, DebateUpdate } from "@/backend/lib/debate/state";
 
-const MAX_ROUNDS = 3;
+const DEFAULT_MAX_ROUNDS = 3;
 
 // ── Round conductor node ────────────────────────────────────────────────────
 // Runs all non-proposer debaters + all guardians concurrently within one round,
@@ -94,12 +94,25 @@ async function makeRoundNode(
   };
 }
 
+export interface DebateGraphOptions {
+  /** Subset of persona IDs to include; if empty/undefined, all enabled personas are used. */
+  agentFilter?: string[];
+  /** Maximum rounds to run (1–3). Defaults to DEFAULT_MAX_ROUNDS. */
+  maxRounds?: number;
+}
+
 /**
  * Builds and compiles the debate graph for the given personas.
  * Called once per debate session from the API route.
  */
-export async function buildDebateGraph() {
-  const personas = await loadPersonas();
+export async function buildDebateGraph(options: DebateGraphOptions = {}) {
+  const allPersonas = await loadPersonas();
+
+  // Apply agent filter if provided
+  const personas =
+    options.agentFilter && options.agentFilter.length > 0
+      ? allPersonas.filter((p) => options.agentFilter!.includes(p.id))
+      : allPersonas;
 
   if (personas.filter((p) => p.role_type === "debater").length === 0) {
     throw new Error(
@@ -108,6 +121,7 @@ export async function buildDebateGraph() {
     );
   }
 
+  const maxRounds = Math.max(1, options.maxRounds ?? DEFAULT_MAX_ROUNDS);
   const roundNode = await makeRoundNode(personas);
 
   async function incrementRound(state: DebateState): Promise<DebateUpdate> {
@@ -116,7 +130,7 @@ export async function buildDebateGraph() {
 
   function shouldContinue(state: DebateState): "conduct" | typeof END {
     const noObjections = state.objections.length === 0;
-    const maxReached = state.round >= MAX_ROUNDS - 1;
+    const maxReached = state.round >= maxRounds - 1;
 
     if (noObjections || maxReached) {
       if (!noObjections) {
