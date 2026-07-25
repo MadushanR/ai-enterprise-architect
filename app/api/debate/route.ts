@@ -5,7 +5,7 @@
  * Each agent turn is emitted as an SSE event as soon as it completes.
  */
 import { NextResponse } from "next/server";
-import { debateGraph } from "@/lib/debate/graph";
+import { buildDebateGraph } from "@/lib/debate/graph";
 import { synthesize } from "@/lib/debate/synthesis";
 import type { DebateState, TranscriptEntry } from "@/lib/debate/state";
 
@@ -39,8 +39,9 @@ export async function POST(request: Request): Promise<Response> {
       let prevTranscriptLength = 0;
 
       try {
-        // Stream graph execution — each node completion emits an SSE event
-        for await (const event of await debateGraph.stream(
+        // Build graph dynamically from persona loader, then stream
+        const graph = await buildDebateGraph();
+        for await (const event of await graph.stream(
           {
             proposal,
             round: 0,

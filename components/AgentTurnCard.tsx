@@ -12,7 +12,7 @@ import type { Objection } from "@/lib/debate/state";
 export type TurnStatus = "streaming" | "objection" | "no-objection" | "done";
 
 interface AgentTurnCardProps {
-  agent: "sa" | "sre" | "finops" | "security";
+  agent: string;
   round: number;
   text: string;
   status: TurnStatus;
