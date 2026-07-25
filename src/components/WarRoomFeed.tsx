@@ -9,12 +9,17 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import AgentTurnCard, { type TurnStatus } from "@/src/components/AgentTurnCard";
 import type { Objection, TranscriptEntry } from "@/backend/lib/debate/state";
-
 interface TurnDisplay {
   agent: TranscriptEntry["agent"];
   round: number;
   text: string;
   status: TurnStatus;
+  objections: Objection[];
+}
+
+interface DebateStateSnapshot {
+  proposal: string;
+  transcript: TranscriptEntry[];
   objections: Objection[];
 }
 
@@ -27,6 +32,8 @@ interface WarRoomFeedProps {
   onSynthesis?: (text: string) => void;
   /** Called when the stream closes (success or error). */
   onComplete?: () => void;
+  /** Called once when the debate finishes — passes the final proposal, transcript, and objections. */
+  onDebateState?: (state: DebateStateSnapshot) => void;
 }
 
 type SSEEvent =
@@ -39,6 +46,7 @@ export default function WarRoomFeed({
   onRoundChange,
   onSynthesis,
   onComplete,
+  onDebateState,
 }: WarRoomFeedProps) {
   const [turns, setTurns] = useState<TurnDisplay[]>([]);
   const [synthesis, setSynthesis] = useState<string | null>(null);
@@ -46,6 +54,11 @@ export default function WarRoomFeed({
   const [running, setRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Accumulate transcript + last proposal + objections in refs so we can pass
+  // them to onDebateState once without triggering re-renders
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
+  const proposalRef = useRef<string>("");
+  const objectionsRef = useRef<Objection[]>([]);
 
   // Auto-scroll to bottom on new turns
   useEffect(() => {
@@ -63,6 +76,9 @@ export default function WarRoomFeed({
       setSynthesis(null);
       setFeedError(null);
       setRunning(true);
+      transcriptRef.current = [];
+      proposalRef.current = prop;
+      objectionsRef.current = [];
 
       try {
         const res = await fetch("/api/debate", {
@@ -102,6 +118,14 @@ export default function WarRoomFeed({
 
             if (event.type === "turn") {
               onRoundChange?.(event.round);
+              // Accumulate transcript entry
+              const entry: TranscriptEntry = {
+                agent: event.agent,
+                turn: event.text,
+                round: event.round,
+              };
+              transcriptRef.current = [...transcriptRef.current, entry];
+              objectionsRef.current = event.objections;
               setTurns((prev) => {
                 // Check if this agent already has a card for this round
                 const existing = prev.findIndex(
@@ -142,9 +166,15 @@ export default function WarRoomFeed({
       } finally {
         setRunning(false);
         onComplete?.();
+        // Pass final debate state to parent for diagram/deck generation
+        onDebateState?.({
+          proposal: proposalRef.current,
+          transcript: transcriptRef.current,
+          objections: objectionsRef.current,
+        });
       }
     },
-    [onRoundChange, onSynthesis, onComplete]
+    [onRoundChange, onSynthesis, onComplete, onDebateState]
   );
 
   // Trigger debate when proposal changes
