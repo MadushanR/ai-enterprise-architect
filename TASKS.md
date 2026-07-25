@@ -63,6 +63,8 @@ look. | Phase 0 | 0.4 | Done |
 | 5.5 | Demo rehearsal: run the full flow end-to-end (discovery → debate → diagram → pptx → chaos → audio) once with real watsonx credentials and record any runtime errors | Phase 5 | 5.4, 4.5, 4.9 | Done |
 | 5.6 | Fix any issues surfaced by the demo rehearsal and update `AGENTS.md` with any newly discovered failure modes | Phase 5 | 5.5 | Done |
 | 5.7 | **STRETCH** — Persona admin UI: a `/settings/personas` screen that lists personas from `/api/personas`, lets a user toggle `enabled` on any persona and add a new persona via a form (all fields from the AGENTS.md persona schema), writes through `lib/git-commit.ts` so new/edited personas are versioned identically to manually-edited files; new personas appear in the next debate without a redeploy | Phase 5 | 2.5r, 5.6 | Done |
+| 6.1 | Wire the live health badge in the page header: call `/api/health/watsonx` on mount, display a coloured dot (`ok` = green, `missingRequiredModels` warnings = amber, error = red) next to the static `health: —` text, replace the dash with the probe model short name so the operator knows which model responded. Poll every 60 s. No spinner — silent background refresh. | Phase 6 | 5.4 | Done |
+| 6.2 | **Session persistence** — Add a "Save Session" button (appears after synthesis) that serialises the current idea, brief, transcript, objections, synthesis, and diagram to `localStorage` (keyed by timestamp). Add a "Load Session" dropdown in the left pane (only when idle) that lists saved sessions by timestamp + idea snippet and restores full app state. Max 5 sessions stored (evict oldest). | Phase 6 | 6.1 | Done |
 
 ---
 

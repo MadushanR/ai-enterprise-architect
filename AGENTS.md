@@ -3,9 +3,9 @@
 ## Model routing — do not change without updating this file
 
 > **Region note:** model availability is region-scoped. IDs below are verified
-> against the **us-south** catalog. The project in `.env.local` is currently in
-> **ca-tor**, which only has llama/mistral models — switch the project to
-> us-south before running the debate engine, or accept the fallback behaviour.
+> against the **us-south** catalog. `.env.local` is configured for **us-south**,
+> which has all three required Granite models. If you switch the project to
+> **ca-tor**, only llama/mistral models are available and the fallback path kicks in.
 
 - Debater personas (`role_type: debater`): `ibm/granite-4-h-small`
   — verified present in us-south; absent in ca-tor (fallback: `meta-llama/llama-3-3-70b-instruct`)

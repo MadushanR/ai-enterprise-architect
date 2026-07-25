@@ -10,7 +10,7 @@ The AI Enterprise Architect is a multimodal AI creative partner that bridges the
 * **GitOps for AI (PromptOps):** AI guardrails, agent personas (SA, SRE, FinOps, Security), and compliance mandates are stored as version-controlled Markdown files under `backend/personas/`. Enterprise teams govern AI behavior via standard Pull Requests — edits take effect on the next request without a redeploy.
 * **The Multi-Agent War Room:** Powered by IBM Granite models via watsonx, specialized AI agents debate architectural trade-offs (speed vs. cost vs. reliability) in a bounded 3-round LangGraph loop. Per-round agent calls run concurrently; adding a persona does not increase wall-clock latency.
 * **Technical Storytelling:** The platform automatically translates the agreed-upon architecture into two deliverables:
-  * A dynamically rendered **Mermaid.js** visual diagram (validated with `mermaid.parse()` before rendering).
+  * A dynamically rendered **Mermaid.js** visual diagram (validated with a structural regex check server-side, then rendered client-only to avoid Node.js DOM issues).
   * A downloadable **Executive Pitch Deck** (`.pptx`) generated with `pptxgenjs`, tailored for the C-Suite.
 * **Audio Feedback Loop (The Review Board):** Upload a meeting recording (`.mp3`). A Scrum Master agent extracts architectural critiques and autonomously patches the Mermaid diagram to reflect human feedback. Uses `granite-speech-4.1-2b` as primary STT, Watson Speech-to-Text as fallback (controlled by `STT_PROVIDER` env var).
 * **Chaos Engineering Storyteller:** Simulate stress tests (e.g., "Black Friday Traffic"). The AI generates a multi-beat narrative (normal → strain → failure → failover → recovery) while updating Mermaid `classDef` diffs in real-time to recolor nodes — never a full re-render.
@@ -39,7 +39,7 @@ Synthesis is performed exactly once per session by `ibm/granite-3-30b-instruct` 
 * **State Management:** Zustand
 * **Visuals & Deliverables:** Mermaid.js v11 (validated SVGs), `pptxgenjs` v4 (PowerPoint generation)
 * **GitOps:** `simple-git` — every persona edit is a real git commit, never a silent overwrite
-* **Markdown Parsing:** `gray-matter` (persona frontmatter), custom frontmatter loader
+* **Markdown Parsing:** Custom YAML frontmatter parser (no external dependency — handles the controlled schema used by persona files)
 
 ## 📂 Project Structure
 

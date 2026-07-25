@@ -23,10 +23,62 @@ import { parseClassDefPatch } from "@/backend/lib/chaos/classDef";
 // ── Types ──────────────────────────────────────────────────────
 type AppPhase = "idle" | "discovering" | "ready" | "debating" | "synthesised";
 
+interface PersonaSummary {
+  id: string;
+  name: string;
+  role_type: "debater" | "guardian";
+  accent_color: string | null;
+  enabled: boolean;
+  turn_order: number;
+}
+
+// ── Session persistence types (task 6.2) ───────────────────────
+const SESSION_KEY = "arb:sessions";
+const MAX_SESSIONS = 5;
+
+interface SavedSession {
+  id: string;            // ISO timestamp used as key
+  idea: string;
+  brief: import("@/src/app/api/discovery/route").CreativeBrief;
+  transcript: import("@/backend/lib/debate/state").TranscriptEntry[];
+  objections: import("@/backend/lib/debate/state").Objection[];
+  synthesis: string;
+  diagram: import("@/backend/lib/mermaid/generate").DiagramResult | null;
+}
+
+function loadSessionsFromStorage(): SavedSession[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as SavedSession[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSessionsToStorage(sessions: SavedSession[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+  } catch {
+    // quota exceeded — ignore silently
+  }
+}
+
+// ── Health badge types ──────────────────────────────────────────
+type HealthStatus = "pending" | "ok" | "warn" | "error";
+interface HealthState {
+  status: HealthStatus;
+  label: string; // short model name or error blurb
+  title: string; // full tooltip text
+}
+
 // ── Component ──────────────────────────────────────────────────
 export default function Home() {
   const [idea, setIdea] = useState("");
   const [brief, setBrief] = useState<CreativeBrief | null>(null);
+  const [editableBrief, setEditableBrief] = useState<CreativeBrief | null>(null);
+  const [briefEditing, setBriefEditing] = useState(false);
   const [phase, setPhase] = useState<AppPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [round, setRound] = useState(-1);
@@ -50,12 +102,26 @@ export default function Home() {
   const diagramRef = useRef<MermaidRendererHandle>(null);
   // Detect prefers-reduced-motion for the chaos delay flag
   const reducedMotionRef = useRef(false);
+  // Personas loaded from API for agent selector
+  const [personas, setPersonas] = useState<PersonaSummary[]>([]);
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [maxRounds, setMaxRounds] = useState(3);
+  // Phase 6.1 — live health badge
+  const [health, setHealth] = useState<HealthState>({
+    status: "pending",
+    label: "—",
+    title: "Checking watsonx…",
+  });
+  // Phase 6.2 — session persistence
+  const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
 
   async function handleAnalyse() {
     if (!idea.trim()) return;
     setPhase("discovering");
     setError(null);
     setBrief(null);
+    setEditableBrief(null);
+    setBriefEditing(false);
     setDebateProposal(null);
     setSynthesis(null);
     setRound(-1);
@@ -71,18 +137,29 @@ export default function Home() {
     setChaosTotal(0);
 
     try {
-      const res = await fetch("/api/discovery", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea }),
-      });
+      // Load personas in parallel with brief generation
+      const [res, personaRes] = await Promise.all([
+        fetch("/api/discovery", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea }),
+        }),
+        fetch("/api/personas"),
+      ]);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
       }
       const data = (await res.json()) as CreativeBrief;
       setBrief(data);
+      setEditableBrief(data);
       setPhase("ready");
+      if (personaRes.ok) {
+        const pData = (await personaRes.json()) as PersonaSummary[];
+        setPersonas(pData);
+        // Default: all enabled personas selected
+        setSelectedAgents(pData.map((p) => p.id));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setPhase("idle");
@@ -90,12 +167,13 @@ export default function Home() {
   }
 
   function handleStartDebate() {
-    if (!brief) return;
-    // Use the problem + constraints as the initial proposal for the debate
+    const activeBrief = editableBrief ?? brief;
+    if (!activeBrief) return;
+    // Use the (possibly edited) brief as the initial proposal for the debate
     const initialProposal = [
-      `Problem: ${brief.problem}`,
-      `Constraints: ${brief.constraints.join("; ")}`,
-      `Drivers: ${brief.drivers.join("; ")}`,
+      `Problem: ${activeBrief.problem}`,
+      `Constraints: ${activeBrief.constraints.join("; ")}`,
+      `Drivers: ${activeBrief.drivers.join("; ")}`,
     ].join("\n");
     setDebateProposal(initialProposal);
     setPhase("debating");
@@ -171,6 +249,106 @@ export default function Home() {
       setDeckLoading(false);
     }
   }
+
+  // ── Phase 6.2: Session persistence ──────────────────────────
+
+  // Load saved sessions from localStorage once on mount (client only)
+  useEffect(() => {
+    setSavedSessions(loadSessionsFromStorage());
+  }, []);
+
+  function handleSaveSession() {
+    if (!brief || !synthesis) return;
+    const entry: SavedSession = {
+      id: new Date().toISOString(),
+      idea,
+      brief,
+      transcript,
+      objections,
+      synthesis,
+      diagram,
+    };
+    setSavedSessions((prev) => {
+      // Prepend newest; trim to max
+      const next = [entry, ...prev].slice(0, MAX_SESSIONS);
+      saveSessionsToStorage(next);
+      return next;
+    });
+  }
+
+  function handleLoadSession(sessionId: string) {
+    const s = savedSessions.find((x) => x.id === sessionId);
+    if (!s) return;
+    setIdea(s.idea);
+    setBrief(s.brief);
+    setEditableBrief(s.brief);
+    setBriefEditing(false);
+    setTranscript(s.transcript);
+    setObjections(s.objections);
+    setSynthesis(s.synthesis);
+    setFinalProposal(null);
+    setDiagram(s.diagram);
+    setDebateComplete(true);
+    setDebateProposal(null);
+    setRound(-1);
+    setPhase("synthesised");
+    setError(null);
+    setChaosBeats([]);
+    setChaosCurrent(-1);
+    setChaosLabel("");
+    setChaosRunning(false);
+    setChaosTotal(0);
+  }
+
+  // ── Phase 6.1: Live health badge ────────────────────────────
+  useEffect(() => {
+    async function checkHealth() {
+      try {
+        const res = await fetch("/api/health/watsonx");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as {
+          ok: boolean;
+          probeModel?: string;
+          missingRequiredModels?: string[];
+          error?: string;
+          step?: string;
+        };
+        if (!data.ok) {
+          setHealth({
+            status: "error",
+            label: data.step ?? "error",
+            title: data.error ?? "watsonx unreachable",
+          });
+          return;
+        }
+        const missing = data.missingRequiredModels ?? [];
+        const shortModel = (data.probeModel ?? "").split("/").pop() ?? "ok";
+        if (missing.length > 0) {
+          setHealth({
+            status: "warn",
+            label: shortModel,
+            title: `Connected. Missing models: ${missing.join(", ")}`,
+          });
+        } else {
+          setHealth({
+            status: "ok",
+            label: shortModel,
+            title: `All required models available (${data.probeModel})`,
+          });
+        }
+      } catch (err) {
+        setHealth({
+          status: "error",
+          label: "offline",
+          title: err instanceof Error ? err.message : "Health check failed",
+        });
+      }
+    }
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ── Phase 4: Chaos Simulator ────────────────────────────────
 
@@ -280,12 +458,32 @@ export default function Home() {
 
         {/* Right-side header controls */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {/* ── Live health badge (task 6.1) ── */}
           <span
             className="text-[0.6875rem] font-mono"
-            style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
-            title="System health"
+            style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)", display: "flex", alignItems: "center", gap: "5px" }}
+            title={health.title}
+            aria-label={`System health: ${health.title}`}
           >
-            health: —
+            {/* Coloured status dot */}
+            <span
+              style={{
+                display: "inline-block",
+                width: "7px",
+                height: "7px",
+                borderRadius: "50%",
+                flexShrink: 0,
+                backgroundColor:
+                  health.status === "ok"
+                    ? "var(--col-chaos-recovery)"
+                    : health.status === "warn"
+                    ? "#f59e0b"
+                    : health.status === "error"
+                    ? "var(--col-chaos-failure)"
+                    : "var(--col-muted)",
+              }}
+            />
+            health: {health.label}
           </span>
           <a
             href="/settings/personas"
@@ -389,78 +587,410 @@ export default function Home() {
             )}
           </section>
 
-          {/* Brief preview */}
-          {brief && (
+          {/* Creative Brief — editable */}
+          {editableBrief && (
             <section
               aria-labelledby="brief-heading"
               className="mt-2"
             >
-              <h2
-                id="brief-heading"
-                className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-3"
-                style={{
-                  fontFamily: "var(--font-plex-condensed)",
-                  color: "var(--col-muted)",
-                }}
-              >
-                Creative Brief
-              </h2>
+              <div className="flex items-center justify-between mb-2">
+                <h2
+                  id="brief-heading"
+                  className="text-[0.6875rem] font-semibold uppercase tracking-widest"
+                  style={{
+                    fontFamily: "var(--font-plex-condensed)",
+                    color: "var(--col-muted)",
+                  }}
+                >
+                  Creative Brief
+                </h2>
+                {phase === "ready" && (
+                  <button
+                    onClick={() => setBriefEditing((v) => !v)}
+                    style={{
+                      fontFamily: "var(--font-geist-mono)",
+                      fontSize: "0.6875rem",
+                      color: briefEditing ? "var(--col-cobalt)" : "var(--col-muted)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "0",
+                    }}
+                    aria-label={briefEditing ? "Collapse brief editor" : "Edit creative brief"}
+                  >
+                    {briefEditing ? "▲ collapse" : "✎ edit"}
+                  </button>
+                )}
+              </div>
 
+              {briefEditing && phase === "ready" ? (
+                /* ── Edit mode ── */
+                <div
+                  className="rounded p-3 space-y-3"
+                  style={{
+                    fontFamily: "var(--font-geist-mono)",
+                    fontSize: "0.8125rem",
+                    backgroundColor: "var(--col-base)",
+                    border: "1px solid var(--col-cobalt)",
+                    borderRadius: "4px",
+                    color: "var(--col-ink)",
+                  }}
+                >
+                  <div>
+                    <label
+                      className="text-[0.6875rem] block mb-1"
+                      style={{ color: "var(--col-muted)" }}
+                      htmlFor="brief-problem"
+                    >
+                      PROBLEM
+                    </label>
+                    <textarea
+                      id="brief-problem"
+                      rows={3}
+                      value={editableBrief.problem}
+                      onChange={(e) =>
+                        setEditableBrief((b) => b ? { ...b, problem: e.target.value } : b)
+                      }
+                      className="w-full resize-none rounded p-2 text-[0.8125rem]"
+                      style={{
+                        fontFamily: "var(--font-geist-mono)",
+                        backgroundColor: "var(--col-surface)",
+                        color: "var(--col-ink)",
+                        border: "1px solid var(--col-rule)",
+                        borderRadius: "3px",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      className="text-[0.6875rem] block mb-1"
+                      style={{ color: "var(--col-muted)" }}
+                    >
+                      CONSTRAINTS
+                    </label>
+                    {editableBrief.constraints.map((c, i) => (
+                      <div key={i} className="flex gap-1 mb-1">
+                        <input
+                          type="text"
+                          value={c}
+                          onChange={(e) =>
+                            setEditableBrief((b) => {
+                              if (!b) return b;
+                              const next = [...b.constraints];
+                              next[i] = e.target.value;
+                              return { ...b, constraints: next };
+                            })
+                          }
+                          className="flex-1 rounded px-2 py-1 text-[0.8125rem]"
+                          style={{
+                            fontFamily: "var(--font-geist-mono)",
+                            backgroundColor: "var(--col-surface)",
+                            color: "var(--col-ink)",
+                            border: "1px solid var(--col-rule)",
+                            borderRadius: "3px",
+                          }}
+                          aria-label={`Constraint ${i + 1}`}
+                        />
+                        <button
+                          onClick={() =>
+                            setEditableBrief((b) => {
+                              if (!b) return b;
+                              const next = b.constraints.filter((_, j) => j !== i);
+                              return { ...b, constraints: next };
+                            })
+                          }
+                          style={{
+                            fontFamily: "var(--font-geist-mono)",
+                            fontSize: "0.75rem",
+                            color: "var(--col-chaos-failure)",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: "0 4px",
+                          }}
+                          aria-label="Remove constraint"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() =>
+                        setEditableBrief((b) => b ? { ...b, constraints: [...b.constraints, ""] } : b)
+                      }
+                      style={{
+                        fontFamily: "var(--font-geist-mono)",
+                        fontSize: "0.6875rem",
+                        color: "var(--col-cobalt)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "0",
+                      }}
+                    >
+                      + add constraint
+                    </button>
+                  </div>
+
+                  <div>
+                    <label
+                      className="text-[0.6875rem] block mb-1"
+                      style={{ color: "var(--col-muted)" }}
+                    >
+                      DRIVERS
+                    </label>
+                    {editableBrief.drivers.map((d, i) => (
+                      <div key={i} className="flex gap-1 mb-1">
+                        <input
+                          type="text"
+                          value={d}
+                          onChange={(e) =>
+                            setEditableBrief((b) => {
+                              if (!b) return b;
+                              const next = [...b.drivers];
+                              next[i] = e.target.value;
+                              return { ...b, drivers: next };
+                            })
+                          }
+                          className="flex-1 rounded px-2 py-1 text-[0.8125rem]"
+                          style={{
+                            fontFamily: "var(--font-geist-mono)",
+                            backgroundColor: "var(--col-surface)",
+                            color: "var(--col-ink)",
+                            border: "1px solid var(--col-rule)",
+                            borderRadius: "3px",
+                          }}
+                          aria-label={`Driver ${i + 1}`}
+                        />
+                        <button
+                          onClick={() =>
+                            setEditableBrief((b) => {
+                              if (!b) return b;
+                              const next = b.drivers.filter((_, j) => j !== i);
+                              return { ...b, drivers: next };
+                            })
+                          }
+                          style={{
+                            fontFamily: "var(--font-geist-mono)",
+                            fontSize: "0.75rem",
+                            color: "var(--col-chaos-failure)",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: "0 4px",
+                          }}
+                          aria-label="Remove driver"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() =>
+                        setEditableBrief((b) => b ? { ...b, drivers: [...b.drivers, ""] } : b)
+                      }
+                      style={{
+                        fontFamily: "var(--font-geist-mono)",
+                        fontSize: "0.6875rem",
+                        color: "var(--col-cobalt)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "0",
+                      }}
+                    >
+                      + add driver
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* ── Read mode ── */
+                <div
+                  className="rounded p-3 text-xs space-y-3"
+                  style={{
+                    fontFamily: "var(--font-geist-mono)",
+                    fontSize: "0.8125rem",
+                    backgroundColor: "var(--col-base)",
+                    border: "1px solid var(--col-rule)",
+                    borderRadius: "4px",
+                    color: "var(--col-ink)",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "var(--col-muted)" }}>PROBLEM</span>
+                    <p className="mt-1">{editableBrief.problem}</p>
+                  </div>
+
+                  <div>
+                    <span style={{ color: "var(--col-muted)" }}>CONSTRAINTS</span>
+                    <ul className="mt-1 space-y-1 list-none pl-0">
+                      {editableBrief.constraints.map((c, i) => (
+                        <li key={i} style={{ paddingLeft: "var(--space-2)" }}>
+                          <span style={{ color: "var(--col-cobalt)" }}>›</span> {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div>
+                    <span style={{ color: "var(--col-muted)" }}>DRIVERS</span>
+                    <ul className="mt-1 space-y-1 list-none pl-0">
+                      {editableBrief.drivers.map((d, i) => (
+                        <li key={i} style={{ paddingLeft: "var(--space-2)" }}>
+                          <span style={{ color: "var(--col-cobalt)" }}>›</span> {d}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* War Room Config — agent selector + rounds, shown before debate starts */}
+          {brief && phase === "ready" && personas.length > 0 && (
+            <section aria-labelledby="warroom-config-heading" className="mt-3">
+              <h2
+                id="warroom-config-heading"
+                className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-2"
+                style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
+              >
+                War Room Config
+              </h2>
               <div
-                className="rounded p-3 text-xs space-y-3"
+                className="rounded p-3 space-y-3"
                 style={{
-                  fontFamily: "var(--font-geist-mono)",
-                  fontSize: "0.8125rem",
                   backgroundColor: "var(--col-base)",
                   border: "1px solid var(--col-rule)",
                   borderRadius: "4px",
-                  color: "var(--col-ink)",
                 }}
               >
+                {/* Agent checkboxes */}
                 <div>
-                  <span style={{ color: "var(--col-muted)" }}>PROBLEM</span>
-                  <p className="mt-1">{brief.problem}</p>
+                  <span
+                    className="text-[0.6875rem] block mb-2"
+                    style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
+                  >
+                    AGENTS
+                  </span>
+                  <div className="space-y-1">
+                    {personas.map((p) => {
+                      const accentColor = p.accent_color ?? "var(--col-cobalt)";
+                      const isChecked = selectedAgents.includes(p.id);
+                      return (
+                        <label
+                          key={p.id}
+                          className="flex items-center gap-2 cursor-pointer select-none"
+                          style={{ fontFamily: "var(--font-geist-mono)", fontSize: "0.8125rem" }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() =>
+                              setSelectedAgents((prev) =>
+                                isChecked
+                                  ? prev.filter((id) => id !== p.id)
+                                  : [...prev, p.id]
+                              )
+                            }
+                            style={{ accentColor }}
+                            aria-label={`Include ${p.name}`}
+                          />
+                          <span style={{ color: accentColor, fontWeight: 600, fontSize: "0.6875rem" }}>
+                            {p.id.toUpperCase()}
+                          </span>
+                          <span style={{ color: "var(--col-ink)" }}>{p.name}</span>
+                          {p.role_type === "guardian" && (
+                            <span
+                              style={{
+                                fontSize: "0.6rem",
+                                color: "var(--col-muted)",
+                                border: "1px solid var(--col-rule)",
+                                borderRadius: "2px",
+                                padding: "0 3px",
+                              }}
+                            >
+                              guardian
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <div>
-                  <span style={{ color: "var(--col-muted)" }}>CONSTRAINTS</span>
-                  <ul className="mt-1 space-y-1 list-none pl-0">
-                    {brief.constraints.map((c, i) => (
-                      <li key={i} style={{ paddingLeft: "var(--space-2)" }}>
-                        <span style={{ color: "var(--col-cobalt)" }}>›</span> {c}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div>
-                  <span style={{ color: "var(--col-muted)" }}>DRIVERS</span>
-                  <ul className="mt-1 space-y-1 list-none pl-0">
-                    {brief.drivers.map((d, i) => (
-                      <li key={i} style={{ paddingLeft: "var(--space-2)" }}>
-                        <span style={{ color: "var(--col-cobalt)" }}>›</span> {d}
-                      </li>
-                    ))}
-                  </ul>
+                {/* Rounds selector */}
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="rounds-input"
+                    className="text-[0.6875rem]"
+                    style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
+                  >
+                    ROUNDS
+                  </label>
+                  <input
+                    id="rounds-input"
+                    type="number"
+                    min={1}
+                    value={maxRounds}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v) && v >= 1) setMaxRounds(v);
+                    }}
+                    style={{
+                      fontFamily: "var(--font-geist-mono)",
+                      fontSize: "0.8125rem",
+                      width: "56px",
+                      padding: "3px 6px",
+                      backgroundColor: "var(--col-surface)",
+                      color: "var(--col-ink)",
+                      border: "1px solid var(--col-cobalt)",
+                      borderRadius: "3px",
+                      textAlign: "center",
+                    }}
+                    aria-label="Number of debate rounds"
+                  />
+                  <span
+                    className="text-[0.6875rem]"
+                    style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
+                  >
+                    max
+                  </span>
                 </div>
               </div>
             </section>
           )}
 
           {/* Start Debate button — shown when brief is ready and debate not started */}
-          {brief && (phase === "ready") && (
+          {brief && phase === "ready" && (
             <button
               onClick={handleStartDebate}
+              disabled={selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0}
               className="mt-2 w-full py-2 text-sm font-medium"
               style={{
                 fontFamily: "var(--font-geist-sans)",
                 fontSize: "0.875rem",
-                backgroundColor: "var(--col-cobalt)",
-                color: "var(--col-ink)",
+                backgroundColor:
+                  selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
+                    ? "var(--col-rule)"
+                    : "var(--col-cobalt)",
+                color:
+                  selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
+                    ? "var(--col-muted)"
+                    : "var(--col-ink)",
                 border: "1px solid var(--col-cobalt)",
                 borderRadius: "4px",
-                cursor: "pointer",
+                cursor:
+                  selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
+                    ? "not-allowed"
+                    : "pointer",
               }}
+              title={
+                selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
+                  ? "Select at least one debater agent"
+                  : undefined
+              }
             >
               ▶ Start War Room Debate
             </button>
@@ -476,12 +1006,68 @@ export default function Home() {
             </p>
           )}
           {phase === "synthesised" && (
-            <p
-              className="mt-2 text-[0.6875rem]"
-              style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-chaos-normal)" }}
-            >
-              ✓ Synthesis complete
-            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              <p
+                className="text-[0.6875rem]"
+                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-chaos-normal)" }}
+              >
+                ✓ Synthesis complete
+              </p>
+              {/* ── Save Session button (task 6.2) ── */}
+              <button
+                onClick={handleSaveSession}
+                className="w-full py-1.5 text-[0.6875rem]"
+                style={{
+                  fontFamily: "var(--font-geist-mono)",
+                  backgroundColor: "var(--col-surface)",
+                  color: "var(--col-muted)",
+                  border: "1px solid var(--col-rule)",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+                title="Save this debate session to browser storage"
+              >
+                ↓ Save Session
+              </button>
+            </div>
+          )}
+
+          {/* ── Load Session picker (task 6.2) — only when idle and sessions exist ── */}
+          {phase === "idle" && savedSessions.length > 0 && (
+            <section aria-labelledby="load-session-heading" className="mt-3">
+              <h2
+                id="load-session-heading"
+                className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-2"
+                style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
+              >
+                Load Session
+              </h2>
+              <select
+                onChange={(e) => { if (e.target.value) handleLoadSession(e.target.value); }}
+                defaultValue=""
+                style={{
+                  fontFamily: "var(--font-geist-mono)",
+                  fontSize: "0.8125rem",
+                  width: "100%",
+                  padding: "5px 8px",
+                  backgroundColor: "var(--col-base)",
+                  color: "var(--col-ink)",
+                  border: "1px solid var(--col-rule)",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+                aria-label="Select a saved session to restore"
+              >
+                <option value="" disabled>
+                  — choose saved session —
+                </option>
+                {savedSessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {new Date(s.id).toLocaleString()} · {s.idea.slice(0, 40)}{s.idea.length > 40 ? "…" : ""}
+                  </option>
+                ))}
+              </select>
+            </section>
           )}
         </aside>
 
@@ -504,6 +1090,9 @@ export default function Home() {
 
           <WarRoomFeed
             proposal={debateProposal}
+            agents={selectedAgents.length > 0 ? selectedAgents : undefined}
+            maxRounds={maxRounds}
+            guardianIds={personas.filter((p) => p.role_type === "guardian").map((p) => p.id)}
             onRoundChange={handleRoundChange}
             onSynthesis={handleSynthesis}
             onComplete={handleDebateComplete}

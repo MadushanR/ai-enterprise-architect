@@ -26,6 +26,12 @@ interface DebateStateSnapshot {
 interface WarRoomFeedProps {
   /** The initial proposal to debate — feed is triggered when this is set. */
   proposal: string | null;
+  /** Subset of persona IDs to include; if undefined all enabled personas run. */
+  agents?: string[];
+  /** Max rounds cap (1–3). */
+  maxRounds?: number;
+  /** IDs of personas with role_type:guardian — used to show YES/NO verdict UI. */
+  guardianIds?: string[];
   /** Called each time a round index is known. */
   onRoundChange?: (round: number) => void;
   /** Called when synthesis text arrives. */
@@ -43,6 +49,9 @@ type SSEEvent =
 
 export default function WarRoomFeed({
   proposal,
+  agents,
+  maxRounds,
+  guardianIds = [],
   onRoundChange,
   onSynthesis,
   onComplete,
@@ -84,7 +93,11 @@ export default function WarRoomFeed({
         const res = await fetch("/api/debate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ proposal: prop }),
+          body: JSON.stringify({
+            proposal: prop,
+            ...(agents && agents.length > 0 ? { agents } : {}),
+            ...(maxRounds !== undefined ? { maxRounds } : {}),
+          }),
           signal: abort.signal,
         });
 
@@ -174,7 +187,7 @@ export default function WarRoomFeed({
         });
       }
     },
-    [onRoundChange, onSynthesis, onComplete, onDebateState]
+    [onRoundChange, onSynthesis, onComplete, onDebateState, agents, maxRounds, guardianIds]
   );
 
   // Trigger debate when proposal changes
@@ -222,6 +235,7 @@ export default function WarRoomFeed({
           text={t.text}
           status={running && i === turns.length - 1 ? "streaming" : t.status}
           objections={t.objections}
+          isGuardian={guardianIds.includes(t.agent)}
         />
       ))}
 

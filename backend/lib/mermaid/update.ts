@@ -14,7 +14,6 @@
  */
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
-import mermaid from "mermaid";
 
 const wx = createWatsonx();
 
@@ -69,14 +68,31 @@ async function callModel(prompt: string): Promise<string> {
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
+// Shared lightweight structural validator — same logic as generate.ts.
+// mermaid.parse() is browser-only (requires DOMPurify/window); never call it server-side.
 
-async function validateDiagram(diagramStr: string): Promise<{ ok: boolean; error?: string }> {
-  try {
-    await mermaid.parse(diagramStr);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+function validateDiagram(diagramStr: string): { ok: boolean; error?: string } {
+  const trimmed = diagramStr.trim();
+  if (!trimmed) return { ok: false, error: "Empty diagram" };
+  if (!/^graph\s+(TD|LR|RL|BT|TB)\b/i.test(trimmed)) {
+    return { ok: false, error: "Diagram must start with 'graph TD'" };
   }
+  const lines = trimmed.split("\n").slice(1);
+  for (const line of lines) {
+    const l = line.trim();
+    if (l === "") continue;
+    const valid =
+      /^%%/.test(l) ||
+      /subgraph|^end$/i.test(l) ||
+      /^style\b|^classDef\b|^class\b|^linkStyle\b/.test(l) ||
+      /-->|---|==>|-\.-?>|==|~~/.test(l) ||
+      /^[A-Za-z0-9_]+[\s]*[\[({>]/.test(l) ||
+      /^[A-Za-z0-9_]+[\s]*$/.test(l);
+    if (!valid) {
+      return { ok: false, error: `Unexpected line: "${l.slice(0, 80)}"` };
+    }
+  }
+  return { ok: true };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -126,7 +142,7 @@ export async function updateDiagramFromTranscript(
   // Append patch lines to the existing diagram
   const updatedDiagram = `${currentDiagram.trimEnd()}\n${cleanPatch}`;
 
-  const check = await validateDiagram(updatedDiagram);
+  const check = validateDiagram(updatedDiagram);
   if (check.ok) {
     console.log(`[mermaid/update] patch applied, ${cleanPatch.split("\n").length} new lines`);
     return { updatedDiagram, patch: cleanPatch, valid: true, noChanges: false };
