@@ -9,7 +9,7 @@
  * Phase 4: Chaos Simulator wired — SSE beats recolor diagram via imperative handle.
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import RoundCounter from "@/src/components/RoundCounter";
 import WarRoomFeed from "@/src/components/WarRoomFeed";
 import MermaidRenderer, { type MermaidRendererHandle } from "@/src/components/MermaidRenderer";
@@ -106,6 +106,9 @@ export default function Home() {
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [maxRounds, setMaxRounds] = useState(3);
+  // Resizable left pane — clamped between 180 and 520 px
+  const [leftWidth, setLeftWidth] = useState(280);
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // Phase 6.1 — live health badge
   const [health, setHealth] = useState<HealthState>({
     status: "pending",
@@ -190,6 +193,14 @@ export default function Home() {
     setDebateComplete(true);
   }, []);
 
+  // Stable guardian ID list — memoized so the array reference only changes when
+  // personas actually changes (prevents WarRoomFeed from re-running the debate
+  // on every parent render due to an unstable `guardianIds` prop).
+  const guardianIds = useMemo(
+    () => personas.filter((p) => p.role_type === "guardian").map((p) => p.id),
+    [personas]
+  );
+
   // Receive final debate state from WarRoomFeed for diagram/deck generation
   const handleDebateState = useCallback(
     (data: { proposal: string; transcript: TranscriptEntry[]; objections: Objection[] }) => {
@@ -199,6 +210,24 @@ export default function Home() {
     },
     []
   );
+
+  // ── Left-pane resize drag handlers ──────────────────────────────
+  const handleResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragStateRef.current = { startX: e.clientX, startWidth: leftWidth };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [leftWidth]);
+
+  const handleResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current) return;
+    const delta = e.clientX - dragStateRef.current.startX;
+    const next = Math.min(520, Math.max(180, dragStateRef.current.startWidth + delta));
+    setLeftWidth(next);
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    dragStateRef.current = null;
+  }, []);
 
   async function handleGenerateDiagram() {
     if (!synthesis) return;
@@ -506,12 +535,12 @@ export default function Home() {
       {/* ── THREE-COLUMN BODY ──────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ── LEFT PANE — Discovery (280px) ─────────────────── */}
+        {/* ── LEFT PANE — Discovery (resizable, default 280px) ── */}
         <aside
           className="flex flex-col gap-4 p-4 overflow-y-auto shrink-0"
           style={{
-            width: "280px",
-            borderRight: "1px solid var(--col-rule)",
+            width: `${leftWidth}px`,
+            borderRight: "none",
             backgroundColor: "var(--col-surface)",
           }}
         >
@@ -1071,6 +1100,28 @@ export default function Home() {
           )}
         </aside>
 
+        {/* ── RESIZE HANDLE — drag to resize left pane ─────────── */}
+        <div
+          role="separator"
+          aria-label="Resize briefing panel"
+          aria-orientation="vertical"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+          style={{
+            width: "5px",
+            flexShrink: 0,
+            cursor: "col-resize",
+            backgroundColor: "var(--col-rule)",
+            transition: "background-color 0.15s",
+            userSelect: "none",
+            touchAction: "none",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--col-cobalt)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--col-rule)"; }}
+        />
+
         {/* ── CENTER PANE — War Room feed (flex-grow) ─────────── */}
         <main
           className="flex flex-col flex-1 overflow-y-auto p-6"
@@ -1092,7 +1143,7 @@ export default function Home() {
             proposal={debateProposal}
             agents={selectedAgents.length > 0 ? selectedAgents : undefined}
             maxRounds={maxRounds}
-            guardianIds={personas.filter((p) => p.role_type === "guardian").map((p) => p.id)}
+            guardianIds={guardianIds}
             onRoundChange={handleRoundChange}
             onSynthesis={handleSynthesis}
             onComplete={handleDebateComplete}

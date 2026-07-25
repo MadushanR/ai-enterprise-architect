@@ -16,6 +16,40 @@ const wx = createWatsonx();
 
 const FALLBACK_MODEL = "meta-llama/llama-3-3-70b-instruct";
 
+/** Sleep for `ms` milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Run `fn`, retrying on HTTP 429 (rate limit) with exponential back-off.
+ * Gives up after `maxAttempts` and re-throws the last error.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = 4
+): Promise<T> {
+  let delay = 1000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status =
+        (err as { status?: number; statusCode?: number })?.status ??
+        (err as { status?: number; statusCode?: number })?.statusCode;
+      const isRateLimit = status === 429;
+      if (!isRateLimit || attempt === maxAttempts) throw err;
+      console.warn(
+        `[guardian][${label}] 429 rate-limit — retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
+      );
+      await sleep(delay);
+      delay = Math.min(delay * 2, 16000);
+    }
+  }
+  throw new Error(`[guardian][${label}] exhausted retries`);
+}
+
 /**
  * Resolve the compliance_ref glob to file contents.
  * The glob is relative to the repo root (process.cwd()).
@@ -54,23 +88,31 @@ export function guardianNode(
     let modelUsed = persona.model;
 
     try {
-      const result = await generateText({
-        model: wx(persona.model),
-        system,
-        prompt,
-        maxOutputTokens: 1024,
-        providerOptions: { watsonx: { reasoningEffort: "high" } },
-      });
+      const result = await withRetry(
+        () =>
+          generateText({
+            model: wx(persona.model),
+            system,
+            prompt,
+            maxOutputTokens: 1024,
+            providerOptions: { watsonx: { reasoningEffort: "high" } },
+          }),
+        persona.model
+      );
       fullText = result.text;
     } catch {
       console.warn(`[${persona.id}] ${persona.model} failed — falling back to ${FALLBACK_MODEL}`);
       modelUsed = FALLBACK_MODEL;
-      const result = await generateText({
-        model: wx(FALLBACK_MODEL),
-        system,
-        prompt,
-        maxOutputTokens: 1024,
-      });
+      const result = await withRetry(
+        () =>
+          generateText({
+            model: wx(FALLBACK_MODEL),
+            system,
+            prompt,
+            maxOutputTokens: 1024,
+          }),
+        FALLBACK_MODEL
+      );
       fullText = result.text;
     }
 
