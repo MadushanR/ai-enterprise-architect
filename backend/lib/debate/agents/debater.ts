@@ -17,6 +17,41 @@ const wx = createWatsonx();
 
 const FALLBACK_MODEL = "meta-llama/llama-3-3-70b-instruct";
 
+/** Sleep for `ms` milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Run `fn`, retrying on HTTP 429 (rate limit) with exponential back-off.
+ * Gives up after `maxAttempts` and re-throws the last error.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = 4
+): Promise<T> {
+  let delay = 1000; // start at 1 s
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status =
+        (err as { status?: number; statusCode?: number })?.status ??
+        (err as { status?: number; statusCode?: number })?.statusCode;
+      const isRateLimit = status === 429;
+      if (!isRateLimit || attempt === maxAttempts) throw err;
+      console.warn(
+        `[debater][${label}] 429 rate-limit — retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
+      );
+      await sleep(delay);
+      delay = Math.min(delay * 2, 16000);
+    }
+  }
+  // unreachable, but satisfies TypeScript
+  throw new Error(`[debater][${label}] exhausted retries`);
+}
+
 async function callWithFallback(
   model: string,
   system: string,
@@ -31,10 +66,13 @@ async function callWithFallback(
   }
 
   try {
-    return { text: await run(model), modelUsed: model };
+    return { text: await withRetry(() => run(model), model), modelUsed: model };
   } catch {
     console.warn(`[debater] ${model} failed — falling back to ${FALLBACK_MODEL}`);
-    return { text: await run(FALLBACK_MODEL), modelUsed: FALLBACK_MODEL };
+    return {
+      text: await withRetry(() => run(FALLBACK_MODEL), FALLBACK_MODEL),
+      modelUsed: FALLBACK_MODEL,
+    };
   }
 }
 

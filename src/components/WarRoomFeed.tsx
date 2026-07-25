@@ -68,6 +68,10 @@ export default function WarRoomFeed({
   const transcriptRef = useRef<TranscriptEntry[]>([]);
   const proposalRef = useRef<string>("");
   const objectionsRef = useRef<Objection[]>([]);
+  // Track the last proposal we actually started a debate for so that unstable
+  // callback references (e.g. a new guardianIds array on each parent render)
+  // don't re-fire the effect and create an infinite debate loop.
+  const lastStartedProposalRef = useRef<string | null>(null);
 
   // Auto-scroll to bottom on new turns
   useEffect(() => {
@@ -190,15 +194,20 @@ export default function WarRoomFeed({
     [onRoundChange, onSynthesis, onComplete, onDebateState, agents, maxRounds, guardianIds]
   );
 
-  // Trigger debate when proposal changes
+  // Trigger debate only when the proposal string itself changes.
+  // We intentionally exclude `startDebate` from the deps: the function is
+  // recreated whenever a parent prop (e.g. guardianIds inline array) gets a
+  // new reference on each render, which would otherwise cause an infinite loop.
   useEffect(() => {
-    if (proposal) {
+    if (proposal && proposal !== lastStartedProposalRef.current) {
+      lastStartedProposalRef.current = proposal;
       void startDebate(proposal);
     }
     return () => {
       abortRef.current?.abort();
     };
-  }, [proposal, startDebate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposal]);
 
   if (!proposal && turns.length === 0) {
     return (
