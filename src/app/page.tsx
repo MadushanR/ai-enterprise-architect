@@ -205,7 +205,7 @@ export default function Home() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
+      outer: while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -222,10 +222,11 @@ export default function Home() {
           try { event = JSON.parse(raw) as Record<string, unknown>; }
           catch { continue; }
 
-          if (event.type === "done") break;
+          // Break the outer reader loop directly — inner break only exits the for.
+          if (event.type === "done") break outer;
           if (event.type === "error") {
             console.error("[chaos]", event.message);
-            break;
+            break outer;
           }
 
           // Beat event
