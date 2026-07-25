@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/* ────────────────────────────────────────────────────────────
+   DESIGN SYSTEM — AI Enterprise Architect
+   Source of truth: DESIGN.md
+   All color, type, and spacing tokens must trace to this file.
+   ──────────────────────────────────────────────────────────── */
+
+/* ── Color tokens (DESIGN.md §2) ── */
+:root {
+  /* Base palette */
+  --col-base:    #0e1117;
+  --col-surface: #161b27;
+  --col-rule:    #1f2b3e;
+  --col-cobalt:  #1a6cf6;
+  --col-ink:     #c9d1e0;
+  --col-muted:   #4a5568;
+
+  /* Chaos simulator state colors (DESIGN.md §2, used only on Mermaid classDef fills) */
+  --col-chaos-normal:   #2d7a6e;
+  --col-chaos-strain:   #c98a1a;
+  --col-chaos-failure:  #c0392b;
+  --col-chaos-recovery: #3b7a57;
+
+  /* Spacing scale — 4px base unit (DESIGN.md §4) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+}
+
+/* ── Tailwind theme extension (DESIGN.md §2, §3, §4) ── */
+@theme inline {
+  /* Map design tokens into Tailwind utility classes */
+  --color-base:           var(--col-base);
+  --color-surface:        var(--col-surface);
+  --color-rule:           var(--col-rule);
+  --color-cobalt:         var(--col-cobalt);
+  --color-ink:            var(--col-ink);
+  --color-muted:          var(--col-muted);
+  --color-chaos-normal:   var(--col-chaos-normal);
+  --color-chaos-strain:   var(--col-chaos-strain);
+  --color-chaos-failure:  var(--col-chaos-failure);
+  --color-chaos-recovery: var(--col-chaos-recovery);
+
+  /* Typography (DESIGN.md §3) */
+  --font-sans:    var(--font-geist-sans);
+  --font-mono:    var(--font-geist-mono);
+  --font-display: var(--font-plex-condensed);
+}
+
+/* ── Global base styles ── */
+html, body {
+  background-color: var(--col-base);
+  color: var(--col-ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* ── Focus ring (DESIGN.md §7) ── */
+:focus-visible {
+  outline: 2px solid var(--col-cobalt);
+  outline-offset: 3px;
+}
+
+/* Remove default outline only when a custom focus ring is present */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Structural lines (DESIGN.md §5): borders use --col-rule, no box-shadow ── */
+* {
+  box-sizing: border-box;
+}
+
+/* ── Interactive states (DESIGN.md §7) ── */
+button:disabled,
+input:disabled,
+textarea:disabled {
+  color: var(--col-muted);
+  cursor: not-allowed;
+}
+
+/* ── Streaming pulse animation (DESIGN.md §7) ── */
+@keyframes streaming-pulse {
+  0%, 100% { border-left-color: rgba(26, 108, 246, 0.4); }
+  50%       { border-left-color: rgba(26, 108, 246, 1); }
+}
+
+.streaming-pulse {
+  animation: streaming-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-pulse {
+    animation: none;
+    border-left-color: rgba(26, 108, 246, 0.7);
+  }
+}
+
+/* ── Round counter closing animation (DESIGN.md §6) ── */
+@keyframes circuit-close {
+  0%   { width: 0; }
+  100% { width: 100%; }
+}
+
+.circuit-close {
+  animation: circuit-close 0.4s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .circuit-close {
+    animation: none;
+    width: 100%;
+  }
+}
