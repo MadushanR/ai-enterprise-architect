@@ -10,8 +10,8 @@
  */
 import { streamText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
-import type { PersonaConfig } from "@/lib/debate/load-personas";
-import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/lib/debate/state";
+import type { PersonaConfig } from "@/backend/lib/debate/load-personas";
+import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
 
@@ -93,3 +93,4 @@ export function debaterNode(
     return { objections: newObjections, transcript: [entry] };
   };
 }
+

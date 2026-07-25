@@ -5,7 +5,7 @@
  * Used by the UI to build agent badges dynamically.
  */
 import { NextResponse } from "next/server";
-import { loadPersonas } from "@/lib/debate/load-personas";
+import { loadPersonas } from "@/backend/lib/debate/load-personas";
 
 export async function GET(): Promise<Response> {
   const personas = await loadPersonas();

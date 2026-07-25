@@ -6,7 +6,7 @@ model: ibm/granite-guardian-3-8b
 enabled: true
 turn_order: 4
 accent_color: "#eb4d4b"
-compliance_ref: "personas/compliance/*.md"
+compliance_ref: "backend/personas/compliance/*.md"
 ---
 
 # Persona: Security & Compliance Officer

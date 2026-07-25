@@ -7,8 +7,8 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import AgentTurnCard, { type TurnStatus } from "@/components/AgentTurnCard";
-import type { Objection, TranscriptEntry } from "@/lib/debate/state";
+import AgentTurnCard, { type TurnStatus } from "@/src/components/AgentTurnCard";
+import type { Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 interface TurnDisplay {
   agent: TranscriptEntry["agent"];

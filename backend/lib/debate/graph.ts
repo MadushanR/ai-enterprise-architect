@@ -8,11 +8,11 @@
  *   - Graph is resumable and inspectable via LangGraph state.
  */
 import { StateGraph, END } from "@langchain/langgraph";
-import { DebateAnnotation } from "@/lib/debate/state";
-import { loadPersonas } from "@/lib/debate/load-personas";
-import { debaterNode } from "@/lib/debate/agents/debater";
-import { guardianNode } from "@/lib/debate/agents/guardian";
-import type { DebateState, DebateUpdate } from "@/lib/debate/state";
+import { DebateAnnotation } from "@/backend/lib/debate/state";
+import { loadPersonas } from "@/backend/lib/debate/load-personas";
+import { debaterNode } from "@/backend/lib/debate/agents/debater";
+import { guardianNode } from "@/backend/lib/debate/agents/guardian";
+import type { DebateState, DebateUpdate } from "@/backend/lib/debate/state";
 
 const MAX_ROUNDS = 3;
 
@@ -114,7 +114,7 @@ export async function buildDebateGraph() {
     return { round: state.round + 1 };
   }
 
-  function shouldContinue(state: DebateState): "round" | typeof END {
+  function shouldContinue(state: DebateState): "conduct" | typeof END {
     const noObjections = state.objections.length === 0;
     const maxReached = state.round >= MAX_ROUNDS - 1;
 
@@ -126,17 +126,17 @@ export async function buildDebateGraph() {
       }
       return END;
     }
-    return "round";
+    return "conduct";
   }
 
   return new StateGraph(DebateAnnotation)
-    .addNode("round", roundNode)
-    .addNode("incrementRound", incrementRound)
-    .addEdge("__start__", "round")
-    .addConditionalEdges("round", shouldContinue, {
-      round: "incrementRound",
+    .addNode("conduct", roundNode)
+    .addNode("tick", incrementRound)
+    .addEdge("__start__", "conduct")
+    .addConditionalEdges("conduct", shouldContinue, {
+      conduct: "tick",
       [END]: END,
     })
-    .addEdge("incrementRound", "round")
+    .addEdge("tick", "conduct")
     .compile();
 }

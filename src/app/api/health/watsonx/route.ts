@@ -18,9 +18,9 @@ const HEALTH_PROMPT = "Reply with a single word: ready";
 // not hard failures — the health check still confirms connectivity.
 // IDs are verified against the us-south catalog; see AGENTS.md for region notes.
 const REQUIRED_MODELS = [
-  "ibm/granite-4-h-small",     // debate agents (SA / SRE / FinOps)
-  "ibm/granite-guardian-3-8b", // security agent
-  "ibm/granite-3-30b-instruct", // synthesis step
+  "ibm/granite-4-h-small",          // debate agents (SA / SRE / FinOps)
+  "ibm/granite-guardian-3-8b",      // security agent
+  "meta-llama/llama-3-3-70b-instruct", // synthesis step
 ];
 
 export const dynamic = "force-dynamic";

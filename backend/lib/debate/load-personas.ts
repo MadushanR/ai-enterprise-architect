@@ -134,7 +134,7 @@ function validateMeta(
  * Debater count is capped at MAX_DEBATERS; excess entries are warned and dropped.
  */
 export async function loadPersonas(): Promise<PersonaConfig[]> {
-  const dir = join(process.cwd(), "personas", "agents");
+  const dir = join(process.cwd(), "backend", "personas", "agents");
   const files = (await readdir(dir)).filter((f) => f.endsWith(".md"));
 
   const configs: PersonaConfig[] = [];
