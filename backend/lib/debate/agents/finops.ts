@@ -8,7 +8,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { streamText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
-import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/lib/debate/state";
+import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
 
@@ -16,7 +16,7 @@ const MODEL_PRIMARY = "ibm/granite-4-h-small";
 const MODEL_FALLBACK = "meta-llama/llama-3-3-70b-instruct";
 
 async function loadPersona(): Promise<string> {
-  const path = join(process.cwd(), "personas", "agents", "finops.md");
+  const path = join(process.cwd(), "backend", "personas", "agents", "finops.md");
   return readFile(path, "utf-8");
 }
 
@@ -77,3 +77,4 @@ export async function finopsNode(state: DebateState): Promise<DebateUpdate> {
     transcript: [entry],
   };
 }
+

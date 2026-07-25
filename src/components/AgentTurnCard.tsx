@@ -7,7 +7,7 @@
  * DESIGN.md §10: aria-label="[Agent name] turn" on <article>.
  */
 
-import type { Objection } from "@/lib/debate/state";
+import type { Objection } from "@/backend/lib/debate/state";
 
 export type TurnStatus = "streaming" | "objection" | "no-objection" | "done";
 

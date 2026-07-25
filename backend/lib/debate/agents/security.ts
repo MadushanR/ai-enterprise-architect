@@ -8,7 +8,7 @@ import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
-import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/lib/debate/state";
+import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
 
@@ -16,12 +16,12 @@ const MODEL_PRIMARY = "ibm/granite-guardian-3-8b";
 const MODEL_FALLBACK = "meta-llama/llama-3-3-70b-instruct";
 
 async function loadPersona(): Promise<string> {
-  const path = join(process.cwd(), "personas", "agents", "security.md");
+  const path = join(process.cwd(), "backend", "personas", "agents", "security.md");
   return readFile(path, "utf-8");
 }
 
 async function loadComplianceMandates(): Promise<string> {
-  const dir = join(process.cwd(), "personas", "compliance");
+  const dir = join(process.cwd(), "backend", "personas", "compliance");
   const files = await readdir(dir);
   const mdFiles = files.filter((f) => f.endsWith(".md"));
   const contents = await Promise.all(
@@ -93,3 +93,4 @@ export async function securityNode(state: DebateState): Promise<DebateUpdate> {
     transcript: [entry],
   };
 }
+

@@ -5,9 +5,9 @@
  * Each agent turn is emitted as an SSE event as soon as it completes.
  */
 import { NextResponse } from "next/server";
-import { buildDebateGraph } from "@/lib/debate/graph";
-import { synthesize } from "@/lib/debate/synthesis";
-import type { DebateState, TranscriptEntry } from "@/lib/debate/state";
+import { buildDebateGraph } from "@/backend/lib/debate/graph";
+import { synthesize } from "@/backend/lib/debate/synthesis";
+import type { DebateState, TranscriptEntry } from "@/backend/lib/debate/state";
 
 export const maxDuration = 300; // Allow long-running debate (Vercel/Edge limit)
 

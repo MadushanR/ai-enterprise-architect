@@ -1,16 +1,16 @@
 /**
  * lib/debate/synthesis.ts
  * Single synthesis step — called ONCE after the debate graph completes.
- * AGENTS.md: ibm/granite-3-30b-instruct, NEVER inside the debate loop.
+ * AGENTS.md: meta-llama/llama-3-3-70b-instruct, NEVER inside the debate loop.
  * Produces a canonical architecture description for diagram + pitch-deck generation.
  */
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
-import type { DebateState } from "@/lib/debate/state";
+import type { DebateState } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
 
-const MODEL_SYNTHESIS = "ibm/granite-3-30b-instruct";
+const MODEL_SYNTHESIS = "meta-llama/llama-3-3-70b-instruct";
 
 /**
  * Convert the final debate state into a canonical architecture description.

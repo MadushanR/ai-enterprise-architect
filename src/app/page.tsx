@@ -8,9 +8,9 @@
  */
 
 import { useState, useCallback } from "react";
-import RoundCounter from "@/components/RoundCounter";
-import WarRoomFeed from "@/components/WarRoomFeed";
-import type { CreativeBrief } from "@/app/api/discovery/route";
+import RoundCounter from "@/src/components/RoundCounter";
+import WarRoomFeed from "@/src/components/WarRoomFeed";
+import type { CreativeBrief } from "@/src/app/api/discovery/route";
 
 // ── Types ──────────────────────────────────────────────────────
 type AppPhase = "idle" | "discovering" | "ready" | "debating" | "synthesised";
