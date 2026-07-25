@@ -9,12 +9,14 @@ import { Annotation } from "@langchain/langgraph";
 // ── Sub-types ──────────────────────────────────────────────────
 
 export interface Objection {
-  agent: "sre" | "finops" | "security";
+  /** Persona id from frontmatter — any string, not limited to four names. */
+  agent: string;
   reason: string;
 }
 
 export interface TranscriptEntry {
-  agent: "sa" | "sre" | "finops" | "security";
+  /** Persona id from frontmatter — any string, not limited to four names. */
+  agent: string;
   turn: string;
   round: number;
 }
