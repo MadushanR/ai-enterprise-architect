@@ -15,6 +15,8 @@ import { guardianNode } from "@/backend/lib/debate/agents/guardian";
 import type { DebateState, DebateUpdate } from "@/backend/lib/debate/state";
 
 const DEFAULT_MAX_ROUNDS = 3;
+/** Safety ceiling when auto mode is on (maxRounds = 0). */
+const AUTO_MAX_ROUNDS = 10;
 
 // ── Round conductor node ────────────────────────────────────────────────────
 // Runs all non-proposer debaters + all guardians concurrently within one round,
@@ -23,15 +25,21 @@ const DEFAULT_MAX_ROUNDS = 3;
 async function makeRoundNode(
   personas: Awaited<ReturnType<typeof loadPersonas>>
 ): Promise<(state: DebateState) => Promise<DebateUpdate>> {
-  const proposer = personas.filter((p) => p.role_type === "debater")[0];
-  const reviewers = personas
-    .filter((p) => p.role_type === "debater")
-    .slice(1);
+  const debaters = personas.filter((p) => p.role_type === "debater");
   const guardians = personas.filter((p) => p.role_type === "guardian");
 
+  // Proposer = first debater by turn_order (lowest).
+  // Builder   = last debater by turn_order (highest) when id === "builder".
+  //             Falls back to undefined if no builder persona is loaded.
+  // Mid-reviewers = all debaters in between.
+  const proposer = debaters[0];
+  const builderPersona = debaters.find((p) => p.id === "builder");
+  const midReviewers = debaters.slice(1).filter((p) => p.id !== "builder");
+
   const proposerFn = debaterNode(proposer, true);
-  const reviewerFns = reviewers.map((p) => debaterNode(p, false));
+  const reviewerFns = midReviewers.map((p) => debaterNode(p, false));
   const guardianFns = guardians.map((p) => guardianNode(p));
+  const builderFn = builderPersona ? debaterNode(builderPersona, false) : null;
 
   return async (state: DebateState): Promise<DebateUpdate> => {
     // Step 1: proposer refines the design
@@ -47,7 +55,7 @@ async function makeRoundNode(
       transcript: [...state.transcript, ...proposerTranscript],
     };
 
-    // Step 2: all reviewers and guardians run concurrently on the updated proposal
+    // Step 2: all mid-reviewers and guardians run concurrently on the updated proposal
     const concurrentFns = [...reviewerFns, ...guardianFns];
     const concurrentUpdates = await Promise.all(
       concurrentFns.map((fn) => fn(afterProposer))
@@ -67,22 +75,30 @@ async function makeRoundNode(
           mergedObjections = mergedObjections.filter((o) => o.agent !== obj.agent);
           mergedObjections.push(obj);
         }
-        // Also handle removals (agent returned no objection → it removed itself)
-        const updateAgentIds = new Set(
-          (update.objections as typeof state.objections).map((o) => o.agent)
-        );
-        const relevantAgents = [...reviewerFns, ...guardianFns]
-          .map((_, i) => concurrentFns[i])
-          .map((_, i) => [...reviewers, ...guardians][i]?.id)
-          .filter(Boolean);
-        for (const aid of relevantAgents) {
-          if (!updateAgentIds.has(aid) && aid !== undefined) {
-            // The update came from this agent and had no objection for it
-          }
-        }
       }
       if (Array.isArray(update.transcript)) {
         mergedTranscript.push(...(update.transcript as typeof state.transcript));
+      }
+    }
+
+    // Step 3: builder runs last — after all objections from reviewers + guardians
+    // are collected — so it sees the full picture before producing its build plan.
+    if (builderFn) {
+      const afterReviewers: DebateState = {
+        ...afterProposer,
+        objections: mergedObjections,
+        transcript: [...afterProposer.transcript, ...mergedTranscript],
+      };
+      const builderUpdate = await builderFn(afterReviewers);
+
+      if (builderUpdate.objections !== undefined) {
+        for (const obj of builderUpdate.objections as typeof state.objections) {
+          mergedObjections = mergedObjections.filter((o) => o.agent !== obj.agent);
+          mergedObjections.push(obj);
+        }
+      }
+      if (Array.isArray(builderUpdate.transcript)) {
+        mergedTranscript.push(...(builderUpdate.transcript as typeof state.transcript));
       }
     }
 
@@ -97,7 +113,11 @@ async function makeRoundNode(
 export interface DebateGraphOptions {
   /** Subset of persona IDs to include; if empty/undefined, all enabled personas are used. */
   agentFilter?: string[];
-  /** Maximum rounds to run (1–3). Defaults to DEFAULT_MAX_ROUNDS. */
+  /**
+   * Maximum rounds to run (1–N). Defaults to DEFAULT_MAX_ROUNDS.
+   * Pass 0 to enable auto mode: rounds continue until all agents agree (no objections),
+   * with a hard safety cap of AUTO_MAX_ROUNDS to prevent infinite loops.
+   */
   maxRounds?: number;
 }
 
@@ -121,7 +141,10 @@ export async function buildDebateGraph(options: DebateGraphOptions = {}) {
     );
   }
 
-  const maxRounds = Math.max(1, options.maxRounds ?? DEFAULT_MAX_ROUNDS);
+  const autoMode = options.maxRounds === 0;
+  const maxRounds = autoMode
+    ? AUTO_MAX_ROUNDS
+    : Math.max(1, options.maxRounds ?? DEFAULT_MAX_ROUNDS);
   const roundNode = await makeRoundNode(personas);
 
   async function incrementRound(state: DebateState): Promise<DebateUpdate> {
@@ -132,14 +155,17 @@ export async function buildDebateGraph(options: DebateGraphOptions = {}) {
     const noObjections = state.objections.length === 0;
     const maxReached = state.round >= maxRounds - 1;
 
-    if (noObjections || maxReached) {
-      if (!noObjections) {
-        console.log(
-          `[graph] Max rounds reached with ${state.objections.length} unresolved objection(s). Forcing synthesis.`
-        );
-      }
+    if (noObjections) return END;
+
+    if (maxReached) {
+      console.log(
+        autoMode
+          ? `[graph] Auto mode: safety cap (${AUTO_MAX_ROUNDS} rounds) reached with ${state.objections.length} unresolved objection(s). Forcing synthesis.`
+          : `[graph] Max rounds reached with ${state.objections.length} unresolved objection(s). Forcing synthesis.`
+      );
       return END;
     }
+
     return "conduct";
   }
 

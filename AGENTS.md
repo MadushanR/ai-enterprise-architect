@@ -11,7 +11,8 @@
   — verified present in us-south; absent in ca-tor (fallback: `meta-llama/llama-3-3-70b-instruct`)
 - Guardian personas (`role_type: guardian`): `ibm/granite-guardian-3-8b` (us-south catalog ID)
   — thinking mode (`reasoningEffort: high`), BYOC criteria loaded from `compliance_ref` field at runtime
-- Synthesis step: `ibm/granite-3-30b-instruct` — call ONCE per session, never in the debate loop
+- Synthesis step: `meta-llama/llama-3-3-70b-instruct` — call ONCE per session, never in the debate loop
+  (`ibm/granite-3-30b-instruct` was removed from the us-south catalog on 2026-07-25)
 - Audio: granite-speech-4.1-2b primary, watson-stt fallback (env: STT_PROVIDER)
 
 ## Persona schema

@@ -117,3 +117,44 @@ textarea:disabled {
     width: 100%;
   }
 }
+
+/* ── Chaos simulator node pulse animation (DESIGN.md §8) ── */
+@keyframes chaos-pulse {
+  0%   { filter: brightness(1); }
+  35%  { filter: brightness(2.2); }
+  100% { filter: brightness(1); }
+}
+
+.chaos-pulse-active {
+  animation: chaos-pulse 0.65s ease-out forwards;
+}
+
+/* Reduced-motion: instant snap, no animation */
+@media (prefers-reduced-motion: reduce) {
+  .chaos-pulse-active {
+    animation: none;
+  }
+}
+
+/* ── Chaos log spinner (inline "waiting" indicator) ── */
+@keyframes chaos-spin {
+  to { transform: rotate(360deg); }
+}
+
+.chaos-spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--col-rule);
+  border-top-color: var(--col-chaos-strain);
+  border-radius: 50%;
+  animation: chaos-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chaos-spinner {
+    animation: none;
+    border-top-color: var(--col-chaos-strain);
+  }
+}
