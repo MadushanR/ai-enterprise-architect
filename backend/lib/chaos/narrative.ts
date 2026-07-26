@@ -57,9 +57,10 @@ const SYSTEM_PROMPT = [
   "7. There must be exactly one beat with state=failure.",
 ].join("\n");
 
-function buildPrompt(description: string): string {
+function buildPrompt(description: string, scenario?: string): string {
   return [
     `Architecture description:\n${description}`,
+    scenario ? `\nThe chaos scenario to simulate is: ${scenario}` : "",
     `\nGenerate the chaos simulation beat sequence as a JSON array.`,
   ].join("\n");
 }
@@ -83,14 +84,15 @@ function validateBeats(raw: unknown): ChaosBeat[] {
     if (typeof b.label !== "string" || b.label.trim().length === 0) {
       throw new Error(`Beat ${i}: missing label`);
     }
-    if (!Array.isArray(b.affectedNodes) || b.affectedNodes.length === 0) {
-      throw new Error(`Beat ${i}: affectedNodes must be a non-empty array`);
+    let affected = b.affectedNodes;
+    if (!Array.isArray(affected) || affected.length === 0) {
+      affected = ["unknown"];
     }
 
     return {
       state: b.state as ChaosState,
       label: String(b.label).trim(),
-      affectedNodes: (b.affectedNodes as unknown[]).map((n) => String(n)),
+      affectedNodes: (affected as unknown[]).map((n) => String(n)),
     };
   });
 }
@@ -125,8 +127,8 @@ async function callModel(prompt: string): Promise<string> {
  * Strips markdown fences if the model wraps the JSON despite instructions.
  * Throws if the response cannot be parsed into a valid ChaosBeat[].
  */
-export async function generateNarrative(description: string): Promise<ChaosBeat[]> {
-  const raw = await callModel(buildPrompt(description));
+export async function generateNarrative(description: string, scenario?: string): Promise<ChaosBeat[]> {
+  const raw = await callModel(buildPrompt(description, scenario));
 
   // Strip optional ```json fences
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();

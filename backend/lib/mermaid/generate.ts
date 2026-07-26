@@ -33,19 +33,22 @@ const SYSTEM_PROMPT = [
   "Rules:",
   "1. Output ONLY the Mermaid code block — no prose, no explanation, no markdown fences.",
   "2. The first line must be exactly `graph TD`.",
-  "3. Every node MUST have an alphanumeric ID followed by a quoted label: e.g.  API[\"API Gateway\"]",
-  "4. Node IDs must be alphanumeric with underscores only — NO spaces, NO hyphens, max 20 chars.",
-  "5. Every edge target MUST be a node ID, never a quoted string: write  A --> B  not  A --> [\"label\"]",
-  "6. Node labels may contain spaces but must NOT contain: parentheses ( ), slashes /, plus signs +, pipe |",
+  "3. Every node MUST have an alphanumeric ID followed by a quoted label: e.g.  API[\"API Gateway AWS API Gateway\"]",
+  "4. Node labels MUST be highly detailed. Explicitly name the specific tools, services, and technologies used (e.g. use \"PostgreSQL RDS\" instead of \"Database\", \"React Next.js\" instead of \"Frontend\").",
+  "5. Node IDs must be alphanumeric with underscores only — NO spaces, NO hyphens, max 20 chars.",
+  "6. Every edge target MUST be a node ID, never a quoted string: write  A --> B  not  A --> [\"label\"]",
+  "7. Node labels may contain spaces but must NOT contain: parentheses ( ), slashes /, plus signs +, pipe |",
   "   Replace parentheses with spaces, slashes with spaces, plus with and, pipe with or.",
-  "7. Maximum 20 nodes, maximum 30 edges.",
-  "8. Do NOT use subgraphs, classDef, or click directives.",
+  "8. Maximum 20 nodes, maximum 30 edges.",
+  "9. Do NOT use subgraphs, classDef, or click directives.",
+  "10. Do NOT wrap the diagram in curly braces like a Graphviz dot file.",
 ].join("\n");
 
 function buildPrompt(description: string): string {
   return [
     `Architecture description:\n${description}`,
-    `\nGenerate a graph TD Mermaid diagram that visualises the main components and data flows.`,
+    `\nGenerate a detailed graph TD Mermaid diagram that visualises the main components and data flows.`,
+    `CRITICAL: Ensure node labels explicitly name the specific tools, cloud services, and frameworks being used based on the architecture description.`,
     `Output ONLY the Mermaid code, nothing else.`,
   ].join("\n");
 }
@@ -83,6 +86,14 @@ function sanitizeDiagram(diagram: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
 
+    if (trimmed === "{" || trimmed === "}") {
+      continue;
+    }
+
+    if (/^direction\b/i.test(trimmed)) {
+      continue;
+    }
+
     // Skip blank lines, header, and directive lines untouched
     if (
       trimmed === "" ||
@@ -90,7 +101,11 @@ function sanitizeDiagram(diagram: string): string {
       /^%%/.test(trimmed) ||
       /^(subgraph|end|style|classDef|class|linkStyle)\b/i.test(trimmed)
     ) {
-      sanitized.push(line);
+      if (/^graph\s+(TD|LR|RL|BT|TB)/i.test(trimmed)) {
+        sanitized.push(line.replace(/\s*\{\s*$/, ""));
+      } else {
+        sanitized.push(line);
+      }
       continue;
     }
 
@@ -107,18 +122,31 @@ function sanitizeDiagram(diagram: string): string {
       }
     );
 
-    // Fix 2: sanitize characters inside quoted labels that break Mermaid's lexer.
-    // We target content between `["` and `"]` — replace ( ) / + | with safe chars.
-    fixed = fixed.replace(/\["([^"]*)"\]/g, (_, inner: string) => {
-      const clean = inner
-        .replace(/[()]/g, " ")   // parentheses → space
-        .replace(/\//g, " ")     // slash → space
-        .replace(/\+/g, " and ") // plus → " and "
-        .replace(/\|/g, " or ")  // pipe → " or "
-        .replace(/\s{2,}/g, " ") // collapse multiple spaces
-        .trim();
-      return `["${clean}"]`;
-    });
+    // Fix 2: Normalize all node definitions to use square brackets and quoted labels.
+    // Handles unquoted labels, custom shapes, and problematic characters inside labels.
+    // Matches ID, opening brackets, text, closing brackets, IF followed by an edge or end of line.
+    fixed = fixed.replace(
+      /\b([A-Za-z0-9_]+)\s*([\[({>]+)(.*?)([\])}]+)(?=\s*(?:--|==|-\.|$))/g,
+      (_, id, open, inner: string, close) => {
+        let label = inner.trim();
+        if (label.startsWith('"') && label.endsWith('"')) {
+          label = label.slice(1, -1);
+        }
+        
+        const clean = label
+          .replace(/[\[\]{}()"]/g, " ")
+          .replace(/\//g, " ")
+          .replace(/\+/g, " and ")
+          .replace(/\|/g, " or ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+          
+        return `${id}["${clean}"]`;
+      }
+    );
+
+    // Fix 3: LLM occasionally appends a stray `>` to edge labels e.g. `-->|label|>`
+    fixed = fixed.replace(/(-->|==>|-\.-?>)\s*\|([^|]+)\|>/g, "$1|$2|");
 
     sanitized.push(fixed);
   }
@@ -195,10 +223,11 @@ function validateDiagram(diagram: string): { ok: boolean; error?: string } {
     const valid =
       /^%%/.test(l) ||                          // comment
       /subgraph|^end$/i.test(l) ||              // subgraph block
-      /^style\b|^classDef\b|^class\b|^linkStyle\b/.test(l) || // directives
+      /^style\b|^classDef\b|^class\b|^linkStyle\b|^direction\b/.test(l) || // directives
       /-->|---|==>|-\.-?>|==|~~/.test(l) ||     // edge with any connector
       /^[A-Za-z0-9_]+[\s]*[\[({>]/.test(l) ||  // standalone node definition
-      /^[A-Za-z0-9_]+[\s]*$/.test(l);           // bare node reference
+      /^[A-Za-z0-9_]+[\s]*$/.test(l) ||         // bare node reference
+      /^[{}]$/.test(l);                         // stray braces (will be ignored/stripped)
     if (!valid) {
       return { ok: false, error: `Unexpected line in diagram: "${l.slice(0, 80)}"` };
     }

@@ -61,11 +61,9 @@ export default function RoundCounter({ round, total = 3, complete = false }: Rou
             return (
               <div
                 key={i}
-                className="h-[10px] w-[13px] transition-colors duration-200"
+                className={`h-[10px] w-[13px] transition-colors duration-200${filled ? " segment-filled" : ""}`}
                 style={{
-                  backgroundColor: filled
-                    ? "var(--col-cobalt)"
-                    : "var(--col-rule)",
+                  backgroundColor: filled ? undefined : "var(--col-rule)",
                   borderRadius: "1px",
                 }}
               />

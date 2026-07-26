@@ -115,6 +115,8 @@ async function makeRoundNode(
 export interface DebateGraphOptions {
   /** Subset of persona IDs to include; if empty/undefined, all enabled personas are used. */
   agentFilter?: string[];
+  /** Optional override for which personas run after synthesis. If provided, overrides frontmatter. */
+  postSynthesisOverride?: string[];
   /**
    * Maximum rounds to run (1–N). Defaults to DEFAULT_MAX_ROUNDS.
    * Pass 0 to enable auto mode: rounds continue until all agents agree (no objections),
@@ -184,10 +186,16 @@ export async function buildDebateGraph(options: DebateGraphOptions = {}): Promis
       : allPersonas;
 
   // Split: round personas participate in debate; post-synthesis run after synthesis
-  const roundPersonas = personas.filter((p) => !p.runs_after_synthesis);
-  const postSynthesisPersonas = personas.filter(
-    (p) => p.runs_after_synthesis && p.role_type === "debater"
-  );
+  const isPostSynthesis = (p: typeof personas[0]) => {
+    if (p.role_type !== "debater") return false; // Guardians never run after synthesis
+    if (options.postSynthesisOverride) {
+      return options.postSynthesisOverride.includes(p.id);
+    }
+    return !!p.runs_after_synthesis;
+  };
+
+  const roundPersonas = personas.filter((p) => !isPostSynthesis(p));
+  const postSynthesisPersonas = personas.filter(isPostSynthesis);
 
   if (roundPersonas.filter((p) => p.role_type === "debater").length === 0) {
     throw new Error(

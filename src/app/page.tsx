@@ -13,7 +13,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import RoundCounter from "@/src/components/RoundCounter";
 import WarRoomFeed, { type WarRoomFeedHandle } from "@/src/components/WarRoomFeed";
-import ChatPanel, { type PersonaSummary } from "@/src/components/ChatPanel";
+import ChatPanel, { type PersonaSummary, type ChatMessage } from "@/src/components/ChatPanel";
 import MermaidRenderer, { type MermaidRendererHandle } from "@/src/components/MermaidRenderer";
 import AudioPanel from "@/src/components/AudioPanel";
 import type { CreativeBrief } from "@/src/app/api/discovery/route";
@@ -88,6 +88,7 @@ export default function Home() {
   const [diagramExpanded, setDiagramExpanded] = useState(false);
   const [diagramLoading, setDiagramLoading] = useState(false);
   const [deckLoading, setDeckLoading] = useState(false);
+  const [boardMessages, setBoardMessages] = useState<ChatMessage[]>([]);
   // Phase 4 — full simulation runs on /chaos page (useChaosStore + router.push)
   const diagramRef = useRef<MermaidRendererHandle>(null);
   // Ref to WarRoomFeed so we can imperatively stop the debate
@@ -97,12 +98,16 @@ export default function Home() {
   // Personas loaded from API for agent selector
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [postSynthesisAgents, setPostSynthesisAgents] = useState<string[]>([]);
   const [maxRounds, setMaxRounds] = useState(3);
   // Persona filter for the War Room feed — "all" shows every turn
   const [personaFilter, setPersonaFilter] = useState<string>("all");
   // Resizable left pane — clamped between 180 and 520 px
   const [leftWidth, setLeftWidth] = useState(280);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  // Resizable right pane — clamped between 250 and 600 px
+  const [rightWidth, setRightWidth] = useState(360);
+  const rightDragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // Phase 6.1 — live health badge
   const [health, setHealth] = useState<HealthState>({
     status: "pending",
@@ -130,15 +135,12 @@ export default function Home() {
     setObjections([]);
 
     try {
-      // Load personas in parallel with brief generation
-      const [res, personaRes] = await Promise.all([
-        fetch("/api/discovery", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idea }),
-        }),
-        fetch("/api/personas"),
-      ]);
+      setPhase("discovering");
+      const res = await fetch("/api/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
@@ -147,12 +149,6 @@ export default function Home() {
       setBrief(data);
       setEditableBrief(data);
       setPhase("ready");
-      if (personaRes.ok) {
-        const pData = (await personaRes.json()) as PersonaSummary[];
-        setPersonas(pData);
-        // Default: all enabled personas selected
-        setSelectedAgents(pData.map((p) => p.id));
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setPhase("idle");
@@ -197,6 +193,14 @@ export default function Home() {
     [personas]
   );
 
+  // Determine the proposer (lowest turn_order among selected debaters)
+  // This persona cannot be moved to post-synthesis.
+  const proposerId = useMemo(() => {
+    const activeDebaters = personas.filter(p => p.role_type === "debater" && selectedAgents.includes(p.id));
+    activeDebaters.sort((a, b) => a.turn_order - b.turn_order);
+    return activeDebaters.length > 0 ? activeDebaters[0].id : null;
+  }, [personas, selectedAgents]);
+
   // Receive final debate state from WarRoomFeed for diagram/deck generation
   const handleDebateState = useCallback(
     (data: { proposal: string; transcript: TranscriptEntry[]; objections: Objection[] }) => {
@@ -225,6 +229,24 @@ export default function Home() {
     dragStateRef.current = null;
   }, []);
 
+  // ── Right-pane resize drag handlers ─────────────────────────────
+  const handleRightResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    rightDragStateRef.current = { startX: e.clientX, startWidth: rightWidth };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [rightWidth]);
+
+  const handleRightResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!rightDragStateRef.current) return;
+    const delta = rightDragStateRef.current.startX - e.clientX;
+    const next = Math.min(600, Math.max(250, rightDragStateRef.current.startWidth + delta));
+    setRightWidth(next);
+  }, []);
+
+  const handleRightResizeEnd = useCallback(() => {
+    rightDragStateRef.current = null;
+  }, []);
+
   async function handleGenerateDiagram() {
     if (!synthesis) return;
     setDiagramLoading(true);
@@ -248,11 +270,14 @@ export default function Home() {
     const slug = idea.trim().slice(0, 40).replace(/\s+/g, "-").replace(/[^a-z0-9-]/gi, "").toLowerCase() || "war-room";
     const payload = {
       exportedAt: new Date().toISOString(),
-      idea,
-      brief: editableBrief ?? brief,
-      transcript,
-      objections,
-      synthesis,
+      discovery: idea,
+      creativeBrief: editableBrief ?? brief,
+      entireDebateConvo: {
+        transcript,
+        objections,
+        synthesis,
+      },
+      askTheBoardConvo: boardMessages,
       diagram: diagram ?? null,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -297,9 +322,25 @@ export default function Home() {
 
   // ── Phase 6.2: Session persistence ──────────────────────────
 
-  // Load saved sessions from localStorage once on mount (client only)
+  // Load saved sessions and personas from storage/API once on mount (client only)
   useEffect(() => {
     setSavedSessions(loadSessionsFromStorage());
+
+    async function fetchPersonas() {
+      try {
+        const res = await fetch("/api/personas");
+        if (res.ok) {
+          const data = (await res.json()) as PersonaSummary[];
+          setPersonas(data);
+          // Default: all enabled personas selected
+          setSelectedAgents(data.map((p) => p.id));
+          setPostSynthesisAgents(data.filter((p) => p.runs_after_synthesis).map((p) => p.id));
+        }
+      } catch (err) {
+        console.error("Failed to load personas:", err);
+      }
+    }
+    fetchPersonas();
   }, []);
 
   // ── Rehydrate state after returning from /chaos ──────────────
@@ -453,14 +494,8 @@ export default function Home() {
     <div className="flex flex-col h-full min-h-screen bg-base text-ink">
 
       {/* ── HEADER ────────────────────────────────────────────── */}
-      <header
-        className="flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: "var(--col-rule)", backgroundColor: "var(--col-surface)" }}
-      >
-        <h1
-          className="text-[1.1rem] font-semibold tracking-wide uppercase"
-          style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-ink)" }}
-        >
+      <header className="app-header flex items-center justify-between px-4 py-3">
+        <h1 className="app-title">
           {process.env.NEXT_PUBLIC_APP_NAME ?? "Architecture Review Board"}
         </h1>
 
@@ -477,35 +512,22 @@ export default function Home() {
           >
             {/* Coloured status dot */}
             <span
-              style={{
-                display: "inline-block",
-                width: "7px",
-                height: "7px",
-                borderRadius: "50%",
-                flexShrink: 0,
-                backgroundColor:
-                  health.status === "ok"
-                    ? "var(--col-chaos-recovery)"
-                    : health.status === "warn"
-                    ? "#f59e0b"
-                    : health.status === "error"
-                    ? "var(--col-chaos-failure)"
-                    : "var(--col-muted)",
-              }}
+              className={`status-dot status-dot--${
+                health.status === "ok"
+                  ? "ok"
+                  : health.status === "warn"
+                  ? "warn"
+                  : health.status === "error"
+                  ? "error"
+                  : "pending"
+              }`}
             />
             health: {health.label}
           </span>
           <a
             href="/settings/personas"
-            style={{
-              fontFamily: "var(--font-geist-mono)",
-              fontSize: "0.6875rem",
-              color: "var(--col-muted)",
-              textDecoration: "none",
-              border: "1px solid var(--col-rule)",
-              borderRadius: "3px",
-              padding: "2px 8px",
-            }}
+            className="btn btn-ghost"
+            style={{ padding: "3px 8px", textDecoration: "none" }}
             aria-label="Persona admin settings"
           >
             ⚙ Personas
@@ -519,22 +541,11 @@ export default function Home() {
 
         {/* ── LEFT PANE — Discovery (resizable, default 280px) ── */}
         <aside
-          className="flex flex-col gap-4 p-4 overflow-y-auto shrink-0"
-          style={{
-            width: `${leftWidth}px`,
-            borderRight: "none",
-            backgroundColor: "var(--col-surface)",
-          }}
+          className="pane-left flex flex-col gap-4 p-4 overflow-y-auto shrink-0"
+          style={{ width: `${leftWidth}px` }}
         >
           <section aria-labelledby="discovery-heading">
-            <h2
-              id="discovery-heading"
-              className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-3"
-              style={{
-                fontFamily: "var(--font-plex-condensed)",
-                color: "var(--col-muted)",
-              }}
-            >
+            <h2 id="discovery-heading" className="section-heading section-heading--discovery">
               Discovery
             </h2>
 
@@ -546,15 +557,7 @@ export default function Home() {
               onChange={(e) => setIdea(e.target.value)}
               placeholder="Describe your system or business idea…"
               disabled={phase === "discovering"}
-              className="w-full resize-none rounded p-3 text-sm"
-              style={{
-                fontFamily: "var(--font-geist-sans)",
-                fontSize: "0.875rem",
-                backgroundColor: "var(--col-base)",
-                color: "var(--col-ink)",
-                border: "1px solid var(--col-rule)",
-                borderRadius: "4px",
-              }}
+              className="input-field resize-none"
               aria-label="Business idea input"
             />
 
@@ -562,25 +565,7 @@ export default function Home() {
             <button
               onClick={handleAnalyse}
               disabled={!idea.trim() || phase === "discovering"}
-              className="mt-3 w-full py-2 text-sm font-medium transition-colors"
-              style={{
-                fontFamily: "var(--font-geist-sans)",
-                fontSize: "0.875rem",
-                backgroundColor:
-                  !idea.trim() || phase === "discovering"
-                    ? "var(--col-rule)"
-                    : "var(--col-cobalt)",
-                color:
-                  !idea.trim() || phase === "discovering"
-                    ? "var(--col-muted)"
-                    : "var(--col-ink)",
-                border: "1px solid var(--col-rule)",
-                borderRadius: "4px",
-                cursor:
-                  !idea.trim() || phase === "discovering"
-                    ? "not-allowed"
-                    : "pointer",
-              }}
+              className="btn btn-primary mt-3 w-full py-2"
               aria-busy={phase === "discovering"}
             >
               {phase === "discovering" ? "Analysing…" : "Analyse"}
@@ -605,14 +590,7 @@ export default function Home() {
               className="mt-2"
             >
               <div className="flex items-center justify-between mb-2">
-                <h2
-                  id="brief-heading"
-                  className="text-[0.6875rem] font-semibold uppercase tracking-widest"
-                  style={{
-                    fontFamily: "var(--font-plex-condensed)",
-                    color: "var(--col-muted)",
-                  }}
-                >
+                <h2 id="brief-heading" className="section-heading section-heading--brief mb-0">
                   Creative Brief
                 </h2>
                 {phase === "ready" && (
@@ -637,13 +615,10 @@ export default function Home() {
               {briefEditing && phase === "ready" ? (
                 /* ── Edit mode ── */
                 <div
-                  className="rounded p-3 space-y-3"
+                  className="panel-card panel-card--highlight space-y-3"
                   style={{
                     fontFamily: "var(--font-geist-mono)",
                     fontSize: "0.8125rem",
-                    backgroundColor: "var(--col-base)",
-                    border: "1px solid var(--col-cobalt)",
-                    borderRadius: "4px",
                     color: "var(--col-ink)",
                   }}
                 >
@@ -818,13 +793,10 @@ export default function Home() {
               ) : (
                 /* ── Read mode ── */
                 <div
-                  className="rounded p-3 text-xs space-y-3"
+                  className="panel-card text-xs space-y-3"
                   style={{
                     fontFamily: "var(--font-geist-mono)",
                     fontSize: "0.8125rem",
-                    backgroundColor: "var(--col-base)",
-                    border: "1px solid var(--col-rule)",
-                    borderRadius: "4px",
                     color: "var(--col-ink)",
                   }}
                 >
@@ -859,24 +831,13 @@ export default function Home() {
             </section>
           )}
 
-          {/* War Room Config — agent selector + rounds, shown before debate starts */}
-          {brief && phase === "ready" && personas.length > 0 && (
+          {/* War Room Config — agent selector + rounds, shown before debate starts or when synthesised */}
+          {brief && (phase === "ready" || phase === "synthesised") && personas.length > 0 && (
             <section aria-labelledby="warroom-config-heading" className="mt-3">
-              <h2
-                id="warroom-config-heading"
-                className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-2"
-                style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
-              >
+              <h2 id="warroom-config-heading" className="section-heading section-heading--warroom">
                 War Room Config
               </h2>
-              <div
-                className="rounded p-3 space-y-3"
-                style={{
-                  backgroundColor: "var(--col-base)",
-                  border: "1px solid var(--col-rule)",
-                  borderRadius: "4px",
-                }}
-              >
+              <div className="panel-card space-y-3">
                 {/* Agent checkboxes */}
                 <div>
                   <span
@@ -890,42 +851,66 @@ export default function Home() {
                       const accentColor = p.accent_color ?? "var(--col-cobalt)";
                       const isChecked = selectedAgents.includes(p.id);
                       return (
-                        <label
+                        <div
                           key={p.id}
-                          className="flex items-center gap-2 cursor-pointer select-none"
+                          className="flex items-center justify-between"
                           style={{ fontFamily: "var(--font-geist-mono)", fontSize: "0.8125rem" }}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() =>
-                              setSelectedAgents((prev) =>
-                                isChecked
-                                  ? prev.filter((id) => id !== p.id)
-                                  : [...prev, p.id]
-                              )
-                            }
-                            style={{ accentColor }}
-                            aria-label={`Include ${p.name}`}
-                          />
-                          <span style={{ color: accentColor, fontWeight: 600, fontSize: "0.6875rem" }}>
-                            {p.id.toUpperCase()}
-                          </span>
-                          <span style={{ color: "var(--col-ink)" }}>{p.name}</span>
-                          {p.role_type === "guardian" && (
-                            <span
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() =>
+                                setSelectedAgents((prev) =>
+                                  isChecked
+                                    ? prev.filter((id) => id !== p.id)
+                                    : [...prev, p.id]
+                                )
+                              }
+                              style={{ accentColor }}
+                              aria-label={`Include ${p.name}`}
+                            />
+                            <span style={{ color: accentColor, fontWeight: 600, fontSize: "0.6875rem" }}>
+                              {p.id.toUpperCase()}
+                            </span>
+                            <span style={{ color: "var(--col-ink)" }}>{p.name}</span>
+                            {p.role_type === "guardian" && (
+                              <span
+                                style={{
+                                  fontSize: "0.6rem",
+                                  color: "var(--col-muted)",
+                                  border: "1px solid var(--col-rule)",
+                                  borderRadius: "2px",
+                                  padding: "0 3px",
+                                }}
+                              >
+                                guardian
+                              </span>
+                            )}
+                          </label>
+                          {p.role_type === "debater" && p.id !== proposerId && isChecked && (
+                            <button
+                              onClick={() => {
+                                setPostSynthesisAgents(prev => 
+                                  prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                                );
+                              }}
+                              className="select-none"
                               style={{
                                 fontSize: "0.6rem",
-                                color: "var(--col-muted)",
-                                border: "1px solid var(--col-rule)",
+                                color: postSynthesisAgents.includes(p.id) ? accentColor : "var(--col-muted)",
+                                border: `1px solid ${postSynthesisAgents.includes(p.id) ? accentColor : "var(--col-rule)"}`,
                                 borderRadius: "2px",
-                                padding: "0 3px",
+                                padding: "0 4px",
+                                background: postSynthesisAgents.includes(p.id) ? `${accentColor}1A` : "none",
+                                cursor: "pointer"
                               }}
+                              title={postSynthesisAgents.includes(p.id) ? "Runs after synthesis" : "Click to run after synthesis"}
                             >
-                              guardian
-                            </span>
+                              {postSynthesisAgents.includes(p.id) ? "▸ after synthesis" : "run after synthesis"}
+                            </button>
                           )}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
@@ -1001,37 +986,31 @@ export default function Home() {
             </section>
           )}
 
-          {/* Start Debate button — shown when brief is ready and debate not started */}
-          {brief && phase === "ready" && (
+          {/* Start Debate button */}
+          {brief && (phase === "ready" || phase === "synthesised") && (
             <button
-              onClick={handleStartDebate}
-              disabled={selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0}
-              className="mt-2 w-full py-2 text-sm font-medium"
-              style={{
-                fontFamily: "var(--font-geist-sans)",
-                fontSize: "0.875rem",
-                backgroundColor:
-                  selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
-                    ? "var(--col-rule)"
-                    : "var(--col-cobalt)",
-                color:
-                  selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
-                    ? "var(--col-muted)"
-                    : "var(--col-ink)",
-                border: "1px solid var(--col-cobalt)",
-                borderRadius: "4px",
-                cursor:
-                  selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
-                    ? "not-allowed"
-                    : "pointer",
+              onClick={() => {
+                if (phase === "synthesised") {
+                  setDebateComplete(false);
+                  setRound(-1);
+                  setSynthesis(null);
+                  setFinalProposal(null);
+                  setDiagram(null);
+                  setTranscript([]);
+                  setObjections([]);
+                  setBoardMessages([]);
+                }
+                handleStartDebate();
               }}
+              disabled={selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0}
+              className="btn btn-primary mt-2 w-full py-2"
               title={
                 selectedAgents.filter((id) => personas.find((p) => p.id === id && p.role_type === "debater")).length === 0
                   ? "Select at least one debater agent"
                   : undefined
               }
             >
-              ▶ Start War Room Debate
+              {phase === "synthesised" ? "↺ Restart War Room Debate" : "▶ Start War Room Debate"}
             </button>
           )}
 
@@ -1046,15 +1025,8 @@ export default function Home() {
               </p>
               <button
                 onClick={handleStopDebate}
-                className="w-full py-1.5 text-[0.6875rem]"
-                style={{
-                  fontFamily: "var(--font-geist-mono)",
-                  backgroundColor: "var(--col-surface)",
-                  color: "var(--col-chaos-failure)",
-                  border: "1px solid var(--col-chaos-failure)",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
+                className="btn btn-danger w-full py-1.5 text-[0.6875rem]"
+                style={{ fontFamily: "var(--font-geist-mono)" }}
                 title="Abort the running debate and go to synthesis"
               >
                 ■ Stop
@@ -1072,16 +1044,8 @@ export default function Home() {
               {/* ── Save Session button (task 6.2) ── */}
               <button
                 onClick={handleSaveSession}
-                className="w-full py-1.5 text-[0.6875rem]"
-                style={{
-                  fontFamily: "var(--font-geist-mono)",
-                  backgroundColor: sessionSavedFlash ? "var(--col-surface)" : "var(--col-surface)",
-                  color: sessionSavedFlash ? "var(--col-ink)" : "var(--col-muted)",
-                  border: sessionSavedFlash ? "1px solid var(--col-ink)" : "1px solid var(--col-rule)",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  transition: "color 0.2s, border-color 0.2s",
-                }}
+                className="btn btn-secondary w-full py-1.5 text-[0.6875rem]"
+                style={{ fontFamily: "var(--font-geist-mono)" }}
                 title="Save this debate session to browser storage"
               >
                 {sessionSavedFlash ? "✓ Saved" : "↓ Save Session"}
@@ -1092,11 +1056,7 @@ export default function Home() {
           {/* ── Load Session picker (task 6.2) — show when idle OR just after saving ── */}
           {(phase === "idle" || phase === "synthesised") && savedSessions.length > 0 && (
             <section aria-labelledby="load-session-heading" className="mt-3">
-              <h2
-                id="load-session-heading"
-                className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-2"
-                style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
-              >
+              <h2 id="load-session-heading" className="section-heading section-heading--session">
                 Load Session
               </h2>
               <select
@@ -1133,27 +1093,16 @@ export default function Home() {
           role="separator"
           aria-label="Resize briefing panel"
           aria-orientation="vertical"
+          className="resize-handle"
           onPointerDown={handleResizeStart}
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeEnd}
           onPointerCancel={handleResizeEnd}
-          style={{
-            width: "5px",
-            flexShrink: 0,
-            cursor: "col-resize",
-            backgroundColor: "var(--col-rule)",
-            transition: "background-color 0.15s",
-            userSelect: "none",
-            touchAction: "none",
-          }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--col-cobalt)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--col-rule)"; }}
         />
 
         {/* ── CENTER PANE — War Room feed (flex-grow) ─────────── */}
         <main
-          className="flex flex-col flex-1 overflow-y-auto"
-          style={{ backgroundColor: "var(--col-base)" }}
+          className="bg-blueprint flex flex-col flex-1 overflow-y-auto"
           aria-label="War Room debate feed"
         >
           <div className="flex flex-col flex-1 p-6">
@@ -1213,6 +1162,7 @@ export default function Home() {
               ref={warRoomRef}
               proposal={debateProposal}
               agents={selectedAgents.length > 0 ? selectedAgents : undefined}
+              postSynthesisAgents={postSynthesisAgents.length > 0 ? postSynthesisAgents : undefined}
               maxRounds={maxRounds}
               guardianIds={guardianIds}
               filterAgent={personaFilter}
@@ -1230,17 +1180,28 @@ export default function Home() {
               transcript={transcript}
               objections={objections}
               personas={personas}
+              onMessagesChange={setBoardMessages}
             />
           )}
         </main>
 
-        {/* ── RIGHT PANE — Diagram / Chaos / Deck / Audio (360px) ─ */}
+        {/* ── RESIZE HANDLE — drag to resize right pane ─────────── */}
+        <div
+          role="separator"
+          aria-label="Resize right panel"
+          aria-orientation="vertical"
+          className="resize-handle"
+          onPointerDown={handleRightResizeStart}
+          onPointerMove={handleRightResizeMove}
+          onPointerUp={handleRightResizeEnd}
+          onPointerCancel={handleRightResizeEnd}
+        />
+
+        {/* ── RIGHT PANE — Diagram / Chaos / Deck / Audio ─ */}
         <aside
-          className="flex flex-col gap-0 overflow-y-auto shrink-0"
+          className="pane-right flex flex-col gap-0 overflow-y-auto shrink-0"
           style={{
-            width: "360px",
-            borderLeft: "1px solid var(--col-rule)",
-            backgroundColor: "var(--col-surface)",
+            width: `${rightWidth}px`,
           }}
         >
           {/* Live Diagram */}
@@ -1250,26 +1211,15 @@ export default function Home() {
             aria-labelledby="diagram-heading"
           >
             <div className="flex items-center justify-between mb-3">
-              <h2
-                id="diagram-heading"
-                className="text-[0.6875rem] font-semibold uppercase tracking-widest"
-                style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
-              >
+              <h2 id="diagram-heading" className="section-heading section-heading--diagram mb-0">
                 Live Diagram
               </h2>
               {/* Generate button — enabled only when synthesis is ready */}
               <button
                 onClick={handleGenerateDiagram}
                 disabled={!synthesis || diagramLoading}
-                className="text-[0.6875rem] px-2 py-1"
-                style={{
-                  fontFamily: "var(--font-geist-mono)",
-                  backgroundColor: !synthesis || diagramLoading ? "var(--col-rule)" : "var(--col-cobalt)",
-                  color: !synthesis || diagramLoading ? "var(--col-muted)" : "var(--col-ink)",
-                  border: "1px solid var(--col-rule)",
-                  borderRadius: "3px",
-                  cursor: !synthesis || diagramLoading ? "not-allowed" : "pointer",
-                }}
+                className="btn btn-primary text-[0.6875rem] px-2 py-1"
+                style={{ fontFamily: "var(--font-geist-mono)" }}
                 aria-busy={diagramLoading}
               >
                 {diagramLoading ? "Generating…" : diagram ? "Regenerate" : "Generate"}
@@ -1313,12 +1263,9 @@ export default function Home() {
               </button>
             ) : (
               <div
-                className="flex items-center justify-center"
+                className="panel-card flex items-center justify-center"
                 style={{
                   height: "200px",
-                  backgroundColor: "var(--col-base)",
-                  border: "1px solid var(--col-rule)",
-                  borderRadius: "4px",
                   color: "var(--col-muted)",
                   fontSize: "0.75rem",
                   fontFamily: "var(--font-geist-mono)",
@@ -1411,30 +1358,17 @@ export default function Home() {
             style={{ borderColor: "var(--col-rule)" }}
             aria-labelledby="chaos-heading"
           >
-            <h2
-              id="chaos-heading"
-              className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-3"
-              style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
-            >
+            <h2 id="chaos-heading" className="section-heading section-heading--chaos">
               Chaos Simulator
             </h2>
 
             <button
               onClick={handleSimulateChaos}
               disabled={!diagram?.valid}
-              className="w-full py-2 text-sm font-medium"
-              style={{
-                fontFamily: "var(--font-geist-sans)",
-                fontSize: "0.875rem",
-                backgroundColor: !diagram?.valid ? "var(--col-rule)" : "var(--col-chaos-strain)",
-                color: !diagram?.valid ? "var(--col-muted)" : "#0e1117",
-                border: "1px solid var(--col-rule)",
-                borderRadius: "4px",
-                cursor: !diagram?.valid ? "not-allowed" : "pointer",
-              }}
-              aria-label="Simulate Traffic Spike"
+              className="btn btn-chaos w-full py-2"
+              aria-label="Simulate Chaos"
             >
-              ▶ Simulate Traffic Spike
+              ▶ Simulate Chaos
             </button>
 
             {!diagram?.valid && (
@@ -1453,11 +1387,7 @@ export default function Home() {
             style={{ borderColor: "var(--col-rule)" }}
             aria-labelledby="deck-heading"
           >
-            <h2
-              id="deck-heading"
-              className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-3"
-              style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
-            >
+            <h2 id="deck-heading" className="section-heading section-heading--export">
               Export
             </h2>
             <div className="flex flex-col gap-2">
@@ -1465,16 +1395,7 @@ export default function Home() {
               <button
                 onClick={handleExportAll}
                 disabled={!synthesis}
-                className="w-full py-2 text-sm font-medium"
-                style={{
-                  fontFamily: "var(--font-geist-sans)",
-                  fontSize: "0.875rem",
-                  backgroundColor: !synthesis ? "var(--col-rule)" : "var(--col-cobalt)",
-                  color: !synthesis ? "var(--col-muted)" : "var(--col-ink)",
-                  border: "1px solid var(--col-rule)",
-                  borderRadius: "4px",
-                  cursor: !synthesis ? "not-allowed" : "pointer",
-                }}
+                className="btn btn-primary w-full py-2"
                 aria-label="Export all war room data as JSON"
                 title="Downloads brief, transcript, objections, synthesis and diagram as a single JSON file"
               >
@@ -1485,23 +1406,7 @@ export default function Home() {
               <button
                 onClick={handleDownloadDeck}
                 disabled={!synthesis || !diagram?.valid || deckLoading}
-                className="w-full py-2 text-sm font-medium"
-                style={{
-                  fontFamily: "var(--font-geist-sans)",
-                  fontSize: "0.875rem",
-                  backgroundColor:
-                    !synthesis || !diagram?.valid || deckLoading
-                      ? "var(--col-rule)"
-                      : "var(--col-surface)",
-                  color:
-                    !synthesis || !diagram?.valid || deckLoading
-                      ? "var(--col-muted)"
-                      : "var(--col-ink)",
-                  border: "1px solid var(--col-rule)",
-                  borderRadius: "4px",
-                  cursor:
-                    !synthesis || !diagram?.valid || deckLoading ? "not-allowed" : "pointer",
-                }}
+                className="btn btn-secondary w-full py-2"
                 aria-label="Download pitch deck"
                 aria-busy={deckLoading}
               >
@@ -1523,11 +1428,7 @@ export default function Home() {
             className="flex flex-col p-4"
             aria-labelledby="audio-heading"
           >
-            <h2
-              id="audio-heading"
-              className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-3"
-              style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
-            >
+            <h2 id="audio-heading" className="section-heading section-heading--audio">
               Audio Upload
             </h2>
             <AudioPanel
@@ -1543,16 +1444,7 @@ export default function Home() {
       </div>
 
       {/* ── STATUS BAR ──────────────────────────────────────────── */}
-      <footer
-        className="flex items-center gap-4 px-4 py-2 text-[0.6875rem] border-t"
-        style={{
-          fontFamily: "var(--font-geist-mono)",
-          color: "var(--col-muted)",
-          borderColor: "var(--col-rule)",
-          backgroundColor: "var(--col-surface)",
-        }}
-        role="contentinfo"
-      >
+      <footer className="app-footer flex items-center gap-4 px-4 py-2 border-t" role="contentinfo">
         <span>region: {process.env.NEXT_PUBLIC_WATSONX_REGION ?? "us-south"}</span>
         <span aria-hidden="true">│</span>
         <span>model: ibm/granite-4-h-small</span>

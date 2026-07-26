@@ -29,8 +29,9 @@ export async function POST(request: Request): Promise<Response> {
   const {
     proposal,
     agents,
+    postSynthesisAgents,
     maxRounds,
-  } = body as { proposal: string; agents?: string[]; maxRounds?: number };
+  } = body as { proposal: string; agents?: string[]; postSynthesisAgents?: string[]; maxRounds?: number };
 
   const encoder = new TextEncoder();
 
@@ -47,6 +48,7 @@ export async function POST(request: Request): Promise<Response> {
         // Build graph dynamically from persona loader, then stream
         const { graph, postSynthesisPersonas } = await buildDebateGraph({
           agentFilter: Array.isArray(agents) && agents.length > 0 ? agents : undefined,
+          postSynthesisOverride: Array.isArray(postSynthesisAgents) ? postSynthesisAgents : undefined,
           maxRounds: typeof maxRounds === "number" ? maxRounds : undefined,
         });
         for await (const event of await graph.stream(

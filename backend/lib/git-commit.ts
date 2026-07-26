@@ -39,3 +39,20 @@ export async function commitFile(
   await git.commit(message);
   console.log(`[git-commit] committed: ${message}`);
 }
+
+/**
+ * Remove `filePath` from disk and commit the deletion with the supplied `message`.
+ * This is used for persona deletion — the file is removed from the working tree
+ * and the removal is recorded as an auditable git commit.
+ *
+ * @param filePath  Absolute or repo-relative path to the file
+ * @param message   Git commit message — describe WHAT changed and WHY
+ */
+export async function deleteFile(
+  filePath: string,
+  message: string
+): Promise<void> {
+  await git.rm(filePath);
+  await git.commit(message);
+  console.log(`[git-commit] committed deletion: ${message}`);
+}
