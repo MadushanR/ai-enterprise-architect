@@ -8,7 +8,7 @@
 
 /* ── Color tokens (DESIGN.md §2) ── */
 :root {
-  /* Base palette */
+  /* Base palette — dark (default) */
   --col-base:    #0e1117;
   --col-surface: #161b27;
   --col-rule:    #1f2b3e;
@@ -29,6 +29,21 @@
   --space-4: 16px;
   --space-6: 24px;
   --space-8: 32px;
+}
+
+/* ── Light theme token overrides ── */
+[data-theme="light"] {
+  --col-base:    #f7f8fa;
+  --col-surface: #ffffff;
+  --col-rule:    #e5e7eb;
+  --col-cobalt:  #1a6cf6;
+  --col-ink:     #1f2328;
+  --col-muted:   #57606a;
+
+  --col-chaos-normal:   #16a34a;
+  --col-chaos-strain:   #d97706;
+  --col-chaos-failure:  #dc2626;
+  --col-chaos-recovery: #15803d;
 }
 
 /* ── Tailwind theme extension (DESIGN.md §2, §3, §4) ── */

@@ -36,6 +36,11 @@ export interface PersonaConfig {
   accent_color?: string;
   /** Guardian only: glob pattern for BYOC compliance files. */
   compliance_ref?: string;
+  /**
+   * When true, this persona runs AFTER synthesis (not during the debate rounds).
+   * Useful for personas like the builder that should react to the final synthesis output.
+   */
+  runs_after_synthesis?: boolean;
   /** System prompt text (markdown body below the frontmatter fence). */
   systemPrompt: string;
 }
@@ -122,6 +127,7 @@ function validateMeta(
     turn_order: Number(meta.turn_order),
     accent_color: meta.accent_color ? String(meta.accent_color) : undefined,
     compliance_ref: meta.compliance_ref ? String(meta.compliance_ref) : undefined,
+    runs_after_synthesis: meta.runs_after_synthesis === true,
     systemPrompt: "", // filled in after body is known
   };
 }

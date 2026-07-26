@@ -34,6 +34,18 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${plexCondensed.variable} h-full antialiased`}
     >
+      {/*
+        No-flash theme init: runs synchronously before the first paint.
+        Reads localStorage and sets data-theme on <html> so the correct
+        CSS token overrides apply before any content renders.
+      */}
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('arb:theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

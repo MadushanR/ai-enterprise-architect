@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import type { AdminPersona } from "@/src/app/api/personas/all/route";
 import type { PersonaCreatePayload } from "@/src/app/api/personas/create/route";
+import ThemeToggle from "@/src/components/ThemeToggle";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -199,22 +200,25 @@ export default function PersonasAdminPage() {
             Persona Admin
           </h1>
         </div>
-        <button
-          onClick={() => { setShowForm((v) => !v); setFormError(null); setFormSuccess(null); }}
-          style={{
-            fontFamily: "var(--font-geist-sans)",
-            fontSize: "0.8125rem",
-            backgroundColor: showForm ? "var(--col-rule)" : "var(--col-cobalt)",
-            color: showForm ? "var(--col-muted)" : "var(--col-ink)",
-            border: "1px solid var(--col-rule)",
-            borderRadius: "4px",
-            padding: "6px 14px",
-            cursor: "pointer",
-          }}
-          aria-expanded={showForm}
-        >
-          {showForm ? "✕ Cancel" : "+ Add Persona"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            onClick={() => { setShowForm((v) => !v); setFormError(null); setFormSuccess(null); }}
+            style={{
+              fontFamily: "var(--font-geist-sans)",
+              fontSize: "0.8125rem",
+              backgroundColor: showForm ? "var(--col-rule)" : "var(--col-cobalt)",
+              color: showForm ? "var(--col-muted)" : "var(--col-ink)",
+              border: "1px solid var(--col-rule)",
+              borderRadius: "4px",
+              padding: "6px 14px",
+              cursor: "pointer",
+            }}
+            aria-expanded={showForm}
+          >
+            {showForm ? "✕ Cancel" : "+ Add Persona"}
+          </button>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main style={{ maxWidth: "800px", margin: "0 auto", padding: "24px 16px" }}>

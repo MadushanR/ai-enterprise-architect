@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { buildDebateGraph } from "@/backend/lib/debate/graph";
 import { synthesize } from "@/backend/lib/debate/synthesis";
+import { debaterNode } from "@/backend/lib/debate/agents/debater";
 import type { DebateState, TranscriptEntry } from "@/backend/lib/debate/state";
 
 export const maxDuration = 300; // Allow long-running debate (Vercel/Edge limit)
@@ -44,7 +45,7 @@ export async function POST(request: Request): Promise<Response> {
 
       try {
         // Build graph dynamically from persona loader, then stream
-        const graph = await buildDebateGraph({
+        const { graph, postSynthesisPersonas } = await buildDebateGraph({
           agentFilter: Array.isArray(agents) && agents.length > 0 ? agents : undefined,
           maxRounds: typeof maxRounds === "number" ? maxRounds : undefined,
         });
@@ -91,6 +92,34 @@ export async function POST(request: Request): Promise<Response> {
               rounds: lastState.round + 1,
             })
           );
+
+          // Post-synthesis personas — run sequentially by turn_order after synthesis.
+          // They receive the synthesis text injected into the proposal slot so they
+          // can react to the final architecture description rather than the raw debate.
+          if (postSynthesisPersonas.length > 0) {
+            const postState: DebateState = {
+              ...lastState,
+              proposal: synthesis,
+            };
+            for (const persona of postSynthesisPersonas) {
+              const fn = debaterNode(persona, false);
+              const update = await fn(postState);
+              if (Array.isArray(update.transcript)) {
+                for (const entry of update.transcript as TranscriptEntry[]) {
+                  controller.enqueue(
+                    sseEvent({
+                      type: "turn",
+                      agent: entry.agent,
+                      round: entry.round,
+                      text: entry.turn,
+                      objections: [],
+                      post_synthesis: true,
+                    })
+                  );
+                }
+              }
+            }
+          }
         }
       } catch (err) {
         controller.enqueue(
