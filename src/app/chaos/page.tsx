@@ -106,6 +106,7 @@ export default function ChaosSimulatorPage() {
   const [chaosRunning, setChaosRunning] = useState(false);
   const [chaosComplete, setChaosComplete] = useState(false);
   const [currentStateLabel, setCurrentStateLabel] = useState("");
+  const [selectedScenario, setSelectedScenario] = useState("");
 
   // Detect reduced motion on mount
   useEffect(() => {
@@ -149,6 +150,7 @@ export default function ChaosSimulatorPage() {
         body: JSON.stringify({
           description: synthesis,
           reducedMotion: reducedMotionRef.current,
+          scenario: selectedScenario,
         }),
       });
     } catch {
@@ -297,54 +299,79 @@ export default function ChaosSimulatorPage() {
           flexShrink: 0,
         }}
       >
-        <button
-          onClick={() => router.push("/")}
-          style={{
-            fontSize: "0.8125rem",
-            fontFamily: "var(--font-geist-sans)",
-            color: "var(--col-muted)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          ← War Room
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <button
+            onClick={() => router.push("/")}
+            style={{
+              fontSize: "0.8125rem",
+              fontFamily: "var(--font-geist-sans)",
+              color: "var(--col-muted)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            ← War Room
+          </button>
 
-        <h1
-          style={{
-            fontFamily: "var(--font-plex-condensed)",
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            color: "var(--col-muted)",
-            margin: 0,
-          }}
-        >
-          Chaos Simulator
-        </h1>
+          <h1
+            style={{
+              fontFamily: "var(--font-plex-condensed)",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              color: "var(--col-muted)",
+              margin: 0,
+            }}
+          >
+            Chaos Simulator
+          </h1>
+        </div>
 
-        <button
-          onClick={() => handleSimulate()}
-          disabled={chaosRunning}
-          style={{
-            fontSize: "0.8125rem",
-            fontFamily: "var(--font-geist-sans)",
-            padding: "5px 12px",
-            backgroundColor: chaosRunning ? "var(--col-rule)" : "var(--col-chaos-strain)",
-            color: chaosRunning ? "var(--col-muted)" : "#0e1117",
-            border: "1px solid var(--col-rule)",
-            borderRadius: "4px",
-            cursor: chaosRunning ? "not-allowed" : "pointer",
-          }}
-          aria-busy={chaosRunning}
-        >
-          {chaosRunning ? "Simulating…" : chaosComplete ? "↺ Re-run" : "▶ Run"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <select
+            value={selectedScenario}
+            onChange={(e) => setSelectedScenario(e.target.value)}
+            disabled={chaosRunning}
+            style={{
+              fontSize: "0.8125rem",
+              fontFamily: "var(--font-geist-sans)",
+              padding: "4px 8px",
+              backgroundColor: "var(--col-surface)",
+              color: "var(--col-ink)",
+              border: "1px solid var(--col-rule)",
+              borderRadius: "4px",
+            }}
+          >
+            <option value="">Traffic Spike (Default)</option>
+            <option value="Database Failure & Failover">Database Failure & Failover</option>
+            <option value="Regional Outage">Regional Outage</option>
+            <option value="DDoS Attack">DDoS Attack</option>
+            <option value="Data Corruption">Data Corruption</option>
+          </select>
+
+          <button
+            onClick={() => handleSimulate()}
+            disabled={chaosRunning}
+            style={{
+              fontSize: "0.8125rem",
+              fontFamily: "var(--font-geist-sans)",
+              padding: "5px 12px",
+              backgroundColor: chaosRunning ? "var(--col-rule)" : "var(--col-chaos-strain)",
+              color: chaosRunning ? "var(--col-muted)" : "#0e1117",
+              border: "1px solid var(--col-rule)",
+              borderRadius: "4px",
+              cursor: chaosRunning ? "not-allowed" : "pointer",
+            }}
+            aria-busy={chaosRunning}
+          >
+            {chaosRunning ? "Simulating…" : chaosComplete ? "↺ Re-run" : "▶ Run"}
+          </button>
+        </div>
       </header>
 
       {/* ── Progress bar ── */}
@@ -403,7 +430,7 @@ export default function ChaosSimulatorPage() {
             Architecture Diagram
           </div>
           {/* Wrapper div we pass to pulseSvgNodes */}
-          <div ref={diagramContainerRef} style={{ flex: 1 }}>
+          <div ref={diagramContainerRef} className="chaos-live-diagram" style={{ flex: 1 }}>
             <MermaidRenderer
               ref={diagramRef}
               diagram={diagramSource}

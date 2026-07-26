@@ -28,6 +28,8 @@ interface WarRoomFeedProps {
   proposal: string | null;
   /** Subset of persona IDs to include; if undefined all enabled personas run. */
   agents?: string[];
+  /** Subset of persona IDs to run after synthesis. */
+  postSynthesisAgents?: string[];
   /** Max rounds cap (1–3). */
   maxRounds?: number;
   /** IDs of personas with role_type:guardian — used to show YES/NO verdict UI. */
@@ -57,6 +59,7 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
   {
     proposal,
     agents,
+    postSynthesisAgents,
     maxRounds,
     guardianIds = [],
     filterAgent,
@@ -71,6 +74,7 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
   const [synthesis, setSynthesis] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [activePage, setActivePage] = useState<number>(1);
   const abortRef = useRef<AbortController | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -93,7 +97,21 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
   // Auto-scroll to bottom on new turns
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns, synthesis]);
+  }, [turns, synthesis, activePage]);
+
+  // Track the highest page (1-indexed) seen so far. t.round is 0-indexed.
+  const highestPage = turns.length > 0 ? Math.max(...turns.map((t) => t.round)) + 1 : 1;
+
+  // Track the previous highest page to only auto-advance when a new round starts
+  const prevHighestPageRef = useRef(highestPage);
+
+  // Auto-advance activePage when a new round starts
+  useEffect(() => {
+    if (highestPage > prevHighestPageRef.current) {
+      setActivePage(highestPage);
+      prevHighestPageRef.current = highestPage;
+    }
+  }, [highestPage]);
 
   const startDebate = useCallback(
     async (prop: string) => {
@@ -106,6 +124,7 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
       setSynthesis(null);
       setFeedError(null);
       setRunning(true);
+      setActivePage(1);
       transcriptRef.current = [];
       proposalRef.current = prop;
       objectionsRef.current = [];
@@ -117,6 +136,7 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
           body: JSON.stringify({
             proposal: prop,
             ...(agents && agents.length > 0 ? { agents } : {}),
+            ...(postSynthesisAgents && postSynthesisAgents.length > 0 ? { postSynthesisAgents } : {}),
             ...(maxRounds !== undefined ? { maxRounds } : {}),
           }),
           signal: abort.signal,
@@ -208,7 +228,7 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
         });
       }
     },
-    [onRoundChange, onSynthesis, onComplete, onDebateState, agents, maxRounds, guardianIds]
+    [onRoundChange, onSynthesis, onComplete, onDebateState, agents, postSynthesisAgents, maxRounds, guardianIds]
   );
 
   // Trigger debate only when the proposal string itself changes.
@@ -228,23 +248,49 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
 
   if (!proposal && turns.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 opacity-40">
-        <svg
-          width="32"
-          height="32"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden="true"
-        >
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
+      <div className="warroom-empty-state">
+        {/* Animated grid background */}
+        <div className="warroom-empty-grid" aria-hidden="true" />
+
+        {/* Icon */}
+        <div className="warroom-empty-icon" aria-hidden="true">
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </div>
+
+        {/* Title */}
         <span
-          className="text-sm"
-          style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
+          style={{
+            fontFamily: "var(--font-plex-condensed)",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--col-ink)",
+            opacity: 0.5,
+          }}
         >
-          Submit an idea to start the debate
+          War Room
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-geist-mono)",
+            fontSize: "0.75rem",
+            color: "var(--col-muted)",
+            maxWidth: "280px",
+            textAlign: "center",
+            lineHeight: 1.5,
+          }}
+        >
+          Submit an idea to assemble the board and start the debate
         </span>
       </div>
     );
@@ -253,6 +299,9 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
   const visibleTurns = filterAgent && filterAgent !== "all"
     ? turns.filter((t) => t.agent === filterAgent)
     : turns;
+
+  // t.round is 0-indexed, activePage is 1-indexed
+  const pageTurns = visibleTurns.filter((t) => t.round + 1 === activePage);
 
   // Build a stable agent-order map: first time an agent appears gets an index.
   // Even index → left, odd index → right — gives the alternating chat layout.
@@ -263,16 +312,19 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
     }
   }
 
+  // Create an array of available rounds for pagination based on the actual rounds reached
+  const availableRounds = Array.from({ length: highestPage }, (_, i) => i + 1);
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="warroom-feed">
       {/* Agent turn cards */}
-      {visibleTurns.map((t, i) => (
+      {pageTurns.map((t, i) => (
         <AgentTurnCard
           key={`${t.agent}-${t.round}-${i}`}
           agent={t.agent}
           round={t.round}
           text={t.text}
-          status={running && i === turns.length - 1 ? "streaming" : t.status}
+          status={running && t.round + 1 === highestPage && i === pageTurns.length - 1 ? "streaming" : t.status}
           objections={t.objections}
           isGuardian={guardianIds.includes(t.agent)}
           align={agentSideMap.get(t.agent) ?? "left"}
@@ -280,37 +332,38 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
       ))}
 
       {/* Loading state when debate is running and no turns yet */}
-      {running && visibleTurns.length === 0 && (
-        <div
-          className="text-sm animate-pulse"
-          style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
-        >
-          Debate starting…
+      {running && pageTurns.length === 0 && activePage === highestPage && (
+        <div className="warroom-debate-starting">
+          <div className="warroom-debate-starting-pulse" />
+          <span>Assembling the board…</span>
         </div>
       )}
 
-      {/* Synthesis card */}
-      {synthesis && (
+      {/* Synthesis card - only show on the last page */}
+      {synthesis && activePage === highestPage && (
         <section
-          aria-labelledby="synthesis-heading"
-          className="mt-2 p-4 rounded"
-          style={{
-            backgroundColor: "var(--col-surface)",
-            border: "1px solid var(--col-rule)",
-            borderLeft: "3px solid var(--col-cobalt)",
-            borderRadius: "4px",
-          }}
+           aria-labelledby="synthesis-heading"
+           className="warroom-synthesis-card"
         >
-          <h3
-            id="synthesis-heading"
-            className="text-[0.6875rem] font-semibold uppercase tracking-wider mb-2"
-            style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-cobalt)" }}
-          >
-            Synthesis
-          </h3>
+          <div className="warroom-synthesis-header">
+            <div className="warroom-synthesis-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            </div>
+            <h3
+              id="synthesis-heading"
+              className="warroom-synthesis-title"
+            >
+              Board Synthesis
+            </h3>
+          </div>
           <p
-            className="text-[0.8125rem] whitespace-pre-wrap leading-relaxed"
-            style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-ink)" }}
+            className="agent-turn-text"
+            style={{
+              fontFamily: "var(--font-geist-mono)",
+              color: "var(--col-ink)",
+            }}
           >
             {synthesis}
           </p>
@@ -319,16 +372,39 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
 
       {/* Error state */}
       {feedError && (
-        <p
-          className="text-xs"
-          style={{ color: "var(--col-chaos-failure)", fontFamily: "var(--font-geist-mono)" }}
-          role="alert"
-        >
-          Debate error: {feedError}
-        </p>
+        <div className="warroom-error" role="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+          </svg>
+          <span>Debate error: {feedError}</span>
+        </div>
       )}
 
       <div ref={bottomRef} aria-hidden="true" />
+
+      {/* Pagination controls at the bottom */}
+      {availableRounds.length > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6 mb-4">
+          {availableRounds.map((r) => (
+            <button
+              key={r}
+              onClick={() => setActivePage(r)}
+              className={`flex items-center justify-center w-8 h-8 rounded-full border text-[0.8125rem] transition-colors ${
+                r === activePage
+                  ? "bg-[var(--col-cobalt)] text-[var(--col-base)] border-[var(--col-cobalt)]"
+                  : "bg-[var(--col-surface)] text-[var(--col-ink)] border-[var(--col-rule)] hover:border-[var(--col-cobalt)]"
+              }`}
+              style={{ fontFamily: "var(--font-geist-mono)" }}
+              aria-label={`Go to round ${r}`}
+              aria-current={r === activePage ? "page" : undefined}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 });

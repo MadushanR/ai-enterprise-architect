@@ -23,9 +23,10 @@ export interface PersonaSummary {
   enabled: boolean;
   turn_order: number;
   accent_color: string | null;
+  runs_after_synthesis?: boolean;
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   /** True while streaming. */
@@ -44,6 +45,7 @@ interface ChatPanelProps {
   objections: Objection[];
   /** Loaded personas — used to resolve accent colors for the "board" fallback. */
   personas: PersonaSummary[];
+  onMessagesChange?: (messages: ChatMessage[]) => void;
 }
 
 export default function ChatPanel({
@@ -51,6 +53,7 @@ export default function ChatPanel({
   transcript,
   objections,
   personas,
+  onMessagesChange,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -68,7 +71,8 @@ export default function ChatPanel({
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    onMessagesChange?.(messages);
+  }, [messages, onMessagesChange]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -216,135 +220,73 @@ export default function ChatPanel({
   return (
     <section
       aria-labelledby="chat-heading"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        borderTop: "1px solid var(--col-rule)",
-        backgroundColor: "var(--col-base)",
-      }}
+      className="chat-panel"
     >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          padding: "10px 24px 8px",
-          borderBottom: "1px solid var(--col-rule)",
-          backgroundColor: "var(--col-surface)",
-        }}
-      >
-        <h2
-          id="chat-heading"
-          style={{
-            fontFamily: "var(--font-plex-condensed)",
-            fontSize: "0.6875rem",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--col-muted)",
-            margin: 0,
-          }}
-        >
-          Ask the Board
-        </h2>
-        {hasUnresolved && (
-          <span
-            style={{
-              fontFamily: "var(--font-geist-mono)",
-              fontSize: "0.625rem",
-              fontWeight: 600,
-              padding: "1px 6px",
-              backgroundColor: "rgba(192, 57, 43, 0.1)",
-              color: "var(--col-chaos-failure)",
-              border: "1px solid var(--col-chaos-failure)",
-              borderRadius: "3px",
-            }}
-            title={objections.map((o) => `[${o.agent.toUpperCase()}]: ${o.reason}`).join("\n")}
-            aria-label={`${objections.length} unresolved objection${objections.length > 1 ? "s" : ""}`}
-          >
-            {objections.length} unresolved
-          </span>
-        )}
-        <span
-          style={{
-            fontFamily: "var(--font-geist-mono)",
-            fontSize: "0.625rem",
-            color: "var(--col-muted)",
-            marginLeft: "auto",
-          }}
-        >
+      {/* ── Header ── */}
+      <div className="chat-panel-header">
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div className="chat-panel-header-icon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            </svg>
+          </div>
+          <h2 id="chat-heading" className="chat-panel-title">
+            Ask the Board
+          </h2>
+          {hasUnresolved && (
+            <span
+              className="agent-verdict-pill"
+              style={{
+                backgroundColor: "rgba(235, 77, 75, 0.12)",
+                color: "var(--col-chaos-failure)",
+                borderColor: "rgba(235, 77, 75, 0.3)",
+              }}
+              title={objections.map((o) => `[${o.agent.toUpperCase()}]: ${o.reason}`).join("\n")}
+              aria-label={`${objections.length} unresolved objection${objections.length > 1 ? "s" : ""}`}
+            >
+              {objections.length} unresolved
+            </span>
+          )}
+        </div>
+        <span className="chat-panel-hint">
           ↵ send · shift+↵ newline
         </span>
       </div>
 
-      {/* Message list */}
+      {/* ── Message list ── */}
       <div
-        style={{
-          flex: "1 1 auto",
-          minHeight: "220px",
-          maxHeight: "420px",
-          overflowY: "auto",
-          padding: "16px 24px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
-        }}
+        className="chat-panel-messages"
         role="log"
         aria-live="polite"
         aria-label="Chat messages"
       >
         {messages.length === 0 && (
-          <p
-            style={{
-              fontFamily: "var(--font-geist-mono)",
-              fontSize: "0.8125rem",
-              color: "var(--col-muted)",
-              textAlign: "center",
-              marginTop: "32px",
-            }}
-          >
-            {hasUnresolved
-              ? `Ask the board to resolve ${objections.length} unresolved objection${objections.length > 1 ? "s" : ""}, or ask why any decision was made.`
-              : "Ask the board why any decision was made — board members respond in character from the debate."}
-          </p>
+          <div className="chat-panel-empty">
+            <div className="chat-panel-empty-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+            </div>
+            <p>
+              {hasUnresolved
+                ? `Ask the board to resolve ${objections.length} unresolved objection${objections.length > 1 ? "s" : ""}, or ask why any decision was made.`
+                : "Ask the board why any decision was made — board members respond in character from the debate."}
+            </p>
+          </div>
         )}
 
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "4px",
-              alignItems: msg.role === "user" ? "flex-end" : "flex-start",
-            }}
+            className={`chat-bubble chat-bubble--${msg.role}`}
           >
             {/* Badge label */}
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "5px",
-                fontFamily: "var(--font-plex-condensed)",
-                fontSize: "0.625rem",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: msg.role === "user" ? "var(--col-cobalt)" : "var(--col-muted)",
-              }}
-            >
+            <span className="chat-bubble-label">
               {/* Accent color dot for attributed persona messages */}
               {msg.role === "assistant" && msg.accentColor && (
                 <span
-                  style={{
-                    display: "inline-block",
-                    width: "7px",
-                    height: "7px",
-                    borderRadius: "50%",
-                    backgroundColor: msg.accentColor,
-                    flexShrink: 0,
-                  }}
+                  className="chat-bubble-dot"
+                  style={{ backgroundColor: msg.accentColor }}
                   aria-hidden="true"
                 />
               )}
@@ -353,26 +295,12 @@ export default function ChatPanel({
 
             {/* Message bubble */}
             <div
+              className="chat-bubble-content"
               style={{
-                maxWidth: "85%",
-                padding: "8px 12px",
-                borderRadius: "4px",
-                backgroundColor:
-                  msg.role === "user" ? "rgba(52, 120, 246, 0.10)" : "var(--col-surface)",
-                border:
-                  msg.role === "user"
-                    ? "1px solid rgba(52, 120, 246, 0.25)"
-                    : "1px solid var(--col-rule)",
-                borderLeft:
+                borderLeftColor:
                   msg.role === "assistant"
-                    ? `3px solid ${msg.accentColor ?? "var(--col-cobalt)"}`
+                    ? (msg.accentColor ?? "var(--col-cobalt)")
                     : undefined,
-                fontFamily: "var(--font-geist-mono)",
-                fontSize: "0.8125rem",
-                color: "var(--col-ink)",
-                lineHeight: "1.6",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
               }}
               aria-label={
                 msg.role === "user"
@@ -381,8 +309,10 @@ export default function ChatPanel({
               }
             >
               {msg.content || (msg.streaming ? (
-                <span style={{ color: msg.accentColor ?? "var(--col-cobalt)" }} className="animate-pulse">
-                  ●
+                <span className="agent-typing-dots" aria-label="typing">
+                  <span />
+                  <span />
+                  <span />
                 </span>
               ) : null)}
             </div>
@@ -390,31 +320,21 @@ export default function ChatPanel({
         ))}
 
         {error && (
-          <p
-            role="alert"
-            style={{
-              fontFamily: "var(--font-geist-mono)",
-              fontSize: "0.75rem",
-              color: "var(--col-chaos-failure)",
-            }}
-          >
-            Error: {error}
+          <p className="warroom-error" role="alert" style={{ margin: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="15" y1="9" x2="9" y2="15" />
+              <line x1="9" y1="9" x2="15" y2="15" />
+            </svg>
+            <span>Error: {error}</span>
           </p>
         )}
 
         <div ref={bottomRef} aria-hidden="true" />
       </div>
 
-      {/* Input area */}
-      <div
-        style={{
-          padding: "8px 24px 16px",
-          display: "flex",
-          gap: "8px",
-          alignItems: "flex-end",
-          borderTop: "1px solid var(--col-rule)",
-        }}
-      >
+      {/* ── Input area ── */}
+      <div className="chat-panel-input-area">
         <textarea
           ref={inputRef}
           value={input}
@@ -427,41 +347,28 @@ export default function ChatPanel({
               ? `Ask about the ${objections.length} unresolved objection${objections.length > 1 ? "s" : ""}, or ask why any decision was made…`
               : `Ask the board why any decision was made — e.g. "why not Kafka?"`
           }
-          style={{
-            flex: 1,
-            resize: "none",
-            fontFamily: "var(--font-geist-mono)",
-            fontSize: "0.8125rem",
-            padding: "8px 10px",
-            backgroundColor: "var(--col-surface)",
-            color: "var(--col-ink)",
-            border: "1px solid var(--col-rule)",
-            borderRadius: "4px",
-            outline: "none",
-            lineHeight: "1.5",
-          }}
+          className="chat-panel-textarea"
           aria-label="Chat message input"
         />
         <button
           onClick={() => void sendMessage(input)}
           disabled={!input.trim() || loading}
-          style={{
-            fontFamily: "var(--font-geist-mono)",
-            fontSize: "0.8125rem",
-            padding: "8px 16px",
-            backgroundColor:
-              !input.trim() || loading ? "var(--col-rule)" : "var(--col-cobalt)",
-            color: !input.trim() || loading ? "var(--col-muted)" : "var(--col-ink)",
-            border: "1px solid var(--col-rule)",
-            borderRadius: "4px",
-            cursor: !input.trim() || loading ? "not-allowed" : "pointer",
-            whiteSpace: "nowrap",
-            alignSelf: "stretch",
-          }}
+          className="chat-panel-send-btn"
           aria-label="Send message"
           aria-busy={loading}
         >
-          {loading ? "…" : "Send"}
+          {loading ? (
+            <span className="agent-typing-dots" aria-label="sending" style={{ gap: "3px" }}>
+              <span />
+              <span />
+              <span />
+            </span>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          )}
         </button>
       </div>
     </section>

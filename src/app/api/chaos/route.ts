@@ -31,9 +31,10 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const { description, reducedMotion = false } = body as {
+  const { description, reducedMotion = false, scenario } = body as {
     description: string;
     reducedMotion?: boolean;
+    scenario?: string;
   };
 
   const delay = reducedMotion ? 0 : BEAT_DELAY_MS;
@@ -46,7 +47,7 @@ export async function POST(request: Request): Promise<Response> {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const beats = await generateNarrative(description);
+        const beats = await generateNarrative(description, scenario);
 
         for (let i = 0; i < beats.length; i++) {
           const beat = beats[i];

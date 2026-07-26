@@ -31,17 +31,11 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
+      className="btn btn-ghost"
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
       style={{
-        fontFamily: "var(--font-geist-mono)",
-        fontSize: "0.75rem",
-        background: "none",
-        border: "1px solid var(--col-rule)",
-        borderRadius: "3px",
-        padding: "2px 7px",
-        cursor: "pointer",
-        color: "var(--col-muted)",
+        padding: "3px 8px",
         lineHeight: 1,
         display: "flex",
         alignItems: "center",
@@ -49,7 +43,7 @@ export default function ThemeToggle() {
         userSelect: "none",
       }}
     >
-      {isDark ? "☀" : "☾"}
+      {isDark ? "☀ Light" : "☾ Dark"}
     </button>
   );
 }

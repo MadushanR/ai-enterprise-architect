@@ -30,6 +30,13 @@ const AGENT_LABELS: Record<string, string> = {
   security: "SEC",
 };
 
+const AGENT_FULL_NAMES: Record<string, string> = {
+  sa: "Solutions Architect",
+  sre: "Site Reliability",
+  finops: "FinOps",
+  security: "Security",
+};
+
 const AGENT_COLORS: Record<string, string> = {
   sa: "var(--col-cobalt)",
   sre: "#e8a735",
@@ -66,6 +73,7 @@ export default function AgentTurnCard({
   align = "left",
 }: AgentTurnCardProps) {
   const label = AGENT_LABELS[agent] ?? agent.toUpperCase();
+  const fullName = AGENT_FULL_NAMES[agent] ?? agent;
   const color = AGENT_COLORS[agent] ?? "var(--col-cobalt)";
 
   const agentObjection = objections.find((o) => o.agent === agent);
@@ -86,150 +94,151 @@ export default function AgentTurnCard({
   return (
     <article
       aria-label={`${label} agent turn, round ${round + 1}`}
-      className={`flex flex-col gap-2 p-3${status === "streaming" ? " streaming-pulse" : ""}`}
+      className={`agent-turn-card${status === "streaming" ? " agent-turn-card--streaming" : ""}`}
       style={{
-        backgroundColor: "var(--col-surface)",
-        border: "1px solid var(--col-rule)",
-        borderLeft: isRight ? "1px solid var(--col-rule)" : `3px solid ${color}`,
-        borderRight: isRight ? `3px solid ${color}` : "1px solid var(--col-rule)",
-        borderRadius: "4px",
-        marginLeft: isRight ? "10%" : "0",
-        marginRight: isRight ? "0" : "10%",
+        ["--agent-color" as string]: color,
+        marginLeft: isRight ? "8%" : "0",
+        marginRight: isRight ? "0" : "8%",
+        animationDelay: `${Math.random() * 0.1}s`,
       }}
     >
-      {/* Agent badge + round + status */}
-      <div className="flex items-center justify-between">
-        {/* Left side: on right-aligned cards show meta first, agent badge last */}
-        {isRight ? (
-          <div className="flex items-center gap-2">
-            <span
-              className="text-[0.6875rem]"
-              style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
-            >
-              R{round + 1}
-            </span>
-            {status === "streaming" && (
-              <span
-                className="text-[0.6875rem] animate-pulse"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
-              >
-                ●
-              </span>
-            )}
-
-            {/* Guardian pill */}
-            {isGuardian && status !== "streaming" && effectiveVerdict && (
-              <span
-                className="text-[0.6875rem] font-semibold px-2 py-0.5"
-                style={{
-                  fontFamily: "var(--font-geist-mono)",
-                  backgroundColor:
-                    effectiveVerdict.verdict === "YES"
-                      ? "rgba(106, 176, 76, 0.15)"
-                      : "rgba(235, 77, 75, 0.15)",
-                  color:
-                    effectiveVerdict.verdict === "YES"
-                      ? "var(--col-chaos-normal)"
-                      : "var(--col-chaos-failure)",
-                  border: `1px solid ${effectiveVerdict.verdict === "YES" ? "var(--col-chaos-normal)" : "var(--col-chaos-failure)"}`,
-                  borderRadius: "3px",
-                }}
-                aria-label={`Security verdict: ${effectiveVerdict.verdict}`}
-              >
-                {effectiveVerdict.verdict === "YES" ? "✓ APPROVED" : "✗ REJECTED"}
-              </span>
-            )}
-
-            {!isGuardian && hasObjection && (
-              <span
-                className="text-[0.6875rem] font-semibold"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-chaos-failure)" }}
-              >
-                OBJECTION
-              </span>
-            )}
-            {!isGuardian && status === "no-objection" && (
-              <span
-                className="text-[0.6875rem]"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-chaos-normal)" }}
-              >
-                NO OBJECTION
-              </span>
-            )}
-          </div>
-        ) : null}
-
-        <span
-          className="text-[0.6875rem] font-semibold uppercase tracking-wider"
-          style={{ fontFamily: "var(--font-plex-condensed)", color }}
+      {/* ── Card header: avatar + name + meta ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          flexDirection: isRight ? "row-reverse" : "row",
+        }}
+      >
+        {/* Agent avatar */}
+        <div
+          className="agent-avatar"
+          style={{
+            backgroundColor: `color-mix(in srgb, ${color} 18%, var(--col-surface-raised))`,
+            border: `1.5px solid ${color}`,
+            color: color,
+          }}
+          aria-hidden="true"
         >
-          {label}
-        </span>
+          {label.slice(0, 2)}
+        </div>
 
-        {/* Right side: on left-aligned cards show meta after agent badge */}
-        {!isRight ? (
-          <div className="flex items-center gap-2">
+        {/* Name + round info */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: isRight ? "flex-end" : "flex-start",
+            gap: "1px",
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span
-              className="text-[0.6875rem]"
-              style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
+              style={{
+                fontFamily: "var(--font-plex-condensed)",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: color,
+              }}
             >
-              R{round + 1}
+              {fullName}
             </span>
+
+            {/* Streaming indicator */}
             {status === "streaming" && (
-              <span
-                className="text-[0.6875rem] animate-pulse"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
-              >
-                ●
-              </span>
-            )}
-
-            {/* Guardian pill */}
-            {isGuardian && status !== "streaming" && effectiveVerdict && (
-              <span
-                className="text-[0.6875rem] font-semibold px-2 py-0.5"
-                style={{
-                  fontFamily: "var(--font-geist-mono)",
-                  backgroundColor:
-                    effectiveVerdict.verdict === "YES"
-                      ? "rgba(106, 176, 76, 0.15)"
-                      : "rgba(235, 77, 75, 0.15)",
-                  color:
-                    effectiveVerdict.verdict === "YES"
-                      ? "var(--col-chaos-normal)"
-                      : "var(--col-chaos-failure)",
-                  border: `1px solid ${effectiveVerdict.verdict === "YES" ? "var(--col-chaos-normal)" : "var(--col-chaos-failure)"}`,
-                  borderRadius: "3px",
-                }}
-                aria-label={`Security verdict: ${effectiveVerdict.verdict}`}
-              >
-                {effectiveVerdict.verdict === "YES" ? "✓ APPROVED" : "✗ REJECTED"}
-              </span>
-            )}
-
-            {!isGuardian && hasObjection && (
-              <span
-                className="text-[0.6875rem] font-semibold"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-chaos-failure)" }}
-              >
-                OBJECTION
-              </span>
-            )}
-            {!isGuardian && status === "no-objection" && (
-              <span
-                className="text-[0.6875rem]"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-chaos-normal)" }}
-              >
-                NO OBJECTION
+              <span className="agent-typing-dots" aria-label="typing">
+                <span />
+                <span />
+                <span />
               </span>
             )}
           </div>
-        ) : null}
+
+          <span
+            style={{
+              fontFamily: "var(--font-geist-mono)",
+              fontSize: "0.625rem",
+              color: "var(--col-muted)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            Round {round + 1}
+          </span>
+        </div>
+
+        {/* Status badges */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+          {/* Guardian verdict pill */}
+          {isGuardian && status !== "streaming" && effectiveVerdict && (
+            <span
+              className="agent-verdict-pill"
+              style={{
+                backgroundColor:
+                  effectiveVerdict.verdict === "YES"
+                    ? "rgba(106, 176, 76, 0.12)"
+                    : "rgba(235, 77, 75, 0.12)",
+                color:
+                  effectiveVerdict.verdict === "YES"
+                    ? "var(--col-chaos-normal)"
+                    : "var(--col-chaos-failure)",
+                borderColor:
+                  effectiveVerdict.verdict === "YES"
+                    ? "rgba(106, 176, 76, 0.3)"
+                    : "rgba(235, 77, 75, 0.3)",
+              }}
+              aria-label={`Security verdict: ${effectiveVerdict.verdict}`}
+            >
+              {effectiveVerdict.verdict === "YES" ? "✓ Approved" : "✗ Rejected"}
+            </span>
+          )}
+
+          {/* Debater objection pill */}
+          {!isGuardian && hasObjection && (
+            <span
+              className="agent-verdict-pill"
+              style={{
+                backgroundColor: "rgba(235, 77, 75, 0.12)",
+                color: "var(--col-chaos-failure)",
+                borderColor: "rgba(235, 77, 75, 0.3)",
+              }}
+            >
+              ⚡ Objection
+            </span>
+          )}
+          {!isGuardian && status === "no-objection" && (
+            <span
+              className="agent-verdict-pill"
+              style={{
+                backgroundColor: "rgba(106, 176, 76, 0.12)",
+                color: "var(--col-chaos-normal)",
+                borderColor: "rgba(106, 176, 76, 0.3)",
+              }}
+            >
+              ✓ No objection
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Turn text */}
+      {/* ── Accent divider ── */}
+      <div
+        style={{
+          height: "1px",
+          margin: "8px 0 6px",
+          background: `linear-gradient(${isRight ? "to left" : "to right"}, ${color}, transparent 80%)`,
+          opacity: 0.3,
+        }}
+        aria-hidden="true"
+      />
+
+      {/* ── Turn text ── */}
       <p
-        className="text-[0.8125rem] whitespace-pre-wrap leading-relaxed"
+        className="agent-turn-text"
         style={{
           fontFamily: "var(--font-geist-mono)",
           color: "var(--col-ink)",
@@ -238,43 +247,42 @@ export default function AgentTurnCard({
         {text || <span style={{ color: "var(--col-muted)" }}>…</span>}
       </p>
 
-      {/* Guardian verdict reason banner */}
+      {/* ── Guardian verdict reason banner ── */}
       {isGuardian && status !== "streaming" && effectiveVerdict && effectiveVerdict.reason && (
         <div
-          className="mt-1 px-2 py-1 text-[0.6875rem]"
+          className="agent-callout"
           style={{
-            fontFamily: "var(--font-geist-mono)",
             backgroundColor:
               effectiveVerdict.verdict === "YES"
-                ? "rgba(106, 176, 76, 0.08)"
-                : "rgba(192, 57, 43, 0.1)",
-            borderLeft: `2px solid ${effectiveVerdict.verdict === "YES" ? "var(--col-chaos-normal)" : "var(--col-chaos-failure)"}`,
+                ? "rgba(106, 176, 76, 0.06)"
+                : "rgba(192, 57, 43, 0.08)",
+            borderLeftColor:
+              effectiveVerdict.verdict === "YES"
+                ? "var(--col-chaos-normal)"
+                : "var(--col-chaos-failure)",
             color:
               effectiveVerdict.verdict === "YES"
                 ? "var(--col-chaos-normal)"
                 : "var(--col-chaos-failure)",
-            borderRadius: "2px",
           }}
           role="note"
           aria-label={`${label} verdict reason: ${effectiveVerdict.reason}`}
         >
-          <span style={{ opacity: 0.7 }}>
-            {effectiveVerdict.verdict === "YES" ? "Reason: " : "Violation: "}
+          <span style={{ opacity: 0.6, fontWeight: 600 }}>
+            {effectiveVerdict.verdict === "YES" ? "Reason " : "Violation "}
           </span>
           {effectiveVerdict.reason}
         </div>
       )}
 
-      {/* Non-guardian objection reason callout */}
+      {/* ── Non-guardian objection reason callout ── */}
       {!isGuardian && hasObjection && agentObjection && (
         <div
-          className="mt-1 px-2 py-1 rounded text-[0.6875rem]"
+          className="agent-callout"
           style={{
-            fontFamily: "var(--font-geist-mono)",
-            backgroundColor: "rgba(192, 57, 43, 0.1)",
-            borderLeft: "2px solid var(--col-chaos-failure)",
+            backgroundColor: "rgba(192, 57, 43, 0.08)",
+            borderLeftColor: "var(--col-chaos-failure)",
             color: "var(--col-chaos-failure)",
-            borderRadius: "2px",
           }}
           role="note"
           aria-label={`${label} objection: ${agentObjection.reason}`}
