@@ -9,6 +9,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { streamText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 import type { DebateState, DebateUpdate, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
@@ -35,28 +36,21 @@ export async function saNode(state: DebateState): Promise<DebateUpdate> {
   let fullText = "";
   let modelUsed = MODEL_PRIMARY;
 
+  const prompt = `Round ${state.round + 1}. Current proposal:\n\n${state.proposal}${objectionContext}`;
+
+  async function run(model: string) {
+    const result = await streamText({ model: wx(model), system: persona, prompt, maxOutputTokens: 1024 });
+    let text = "";
+    for await (const chunk of result.textStream) text += chunk;
+    return text;
+  }
+
   try {
-    const result = await streamText({
-      model: wx(MODEL_PRIMARY),
-      system: persona,
-      prompt: `Round ${state.round + 1}. Current proposal:\n\n${state.proposal}${objectionContext}`,
-      maxOutputTokens: 1024,
-    });
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-    }
+    fullText = await withRetry(() => run(MODEL_PRIMARY), MODEL_PRIMARY);
   } catch {
     // Fallback per AGENTS.md
     modelUsed = MODEL_FALLBACK;
-    const result = await streamText({
-      model: wx(MODEL_FALLBACK),
-      system: persona,
-      prompt: `Round ${state.round + 1}. Current proposal:\n\n${state.proposal}${objectionContext}`,
-      maxOutputTokens: 1024,
-    });
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-    }
+    fullText = await withRetry(() => run(MODEL_FALLBACK), MODEL_FALLBACK);
   }
 
   console.log(`[SA][round ${state.round}] model=${modelUsed} chars=${fullText.length}`);

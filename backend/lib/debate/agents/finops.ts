@@ -8,6 +8,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { streamText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
@@ -34,27 +35,23 @@ export async function finopsNode(state: DebateState): Promise<DebateUpdate> {
   let fullText = "";
   let modelUsed = MODEL_PRIMARY;
 
-  try {
+  async function run(model: string) {
     const result = await streamText({
-      model: wx(MODEL_PRIMARY),
+      model: wx(model),
       system: persona,
       prompt: `Round ${state.round + 1}. Evaluate this architecture proposal for cost and unit economics:\n\n${state.proposal}`,
       maxOutputTokens: 768,
     });
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-    }
+    let text = "";
+    for await (const chunk of result.textStream) text += chunk;
+    return text;
+  }
+
+  try {
+    fullText = await withRetry(() => run(MODEL_PRIMARY), MODEL_PRIMARY);
   } catch {
     modelUsed = MODEL_FALLBACK;
-    const result = await streamText({
-      model: wx(MODEL_FALLBACK),
-      system: persona,
-      prompt: `Round ${state.round + 1}. Evaluate this architecture proposal for cost and unit economics:\n\n${state.proposal}`,
-      maxOutputTokens: 768,
-    });
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-    }
+    fullText = await withRetry(() => run(MODEL_FALLBACK), MODEL_FALLBACK);
   }
 
   console.log(`[FINOPS][round ${state.round}] model=${modelUsed} chars=${fullText.length}`);

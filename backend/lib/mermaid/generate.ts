@@ -10,6 +10,7 @@
  */
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 
 const wx = createWatsonx();
 
@@ -240,21 +241,17 @@ function validateDiagram(diagram: string): { ok: boolean; error?: string } {
 
 async function callModel(system: string, prompt: string): Promise<string> {
   try {
-    const { text } = await generateText({
-      model: wx(MODEL),
-      system,
-      prompt,
-      maxOutputTokens: 1024,
-    });
+    const { text } = await withRetry(
+      () => generateText({ model: wx(MODEL), system, prompt, maxOutputTokens: 1024 }),
+      MODEL
+    );
     return text;
   } catch {
     console.warn(`[mermaid/generate] ${MODEL} failed — falling back to ${FALLBACK_MODEL}`);
-    const { text } = await generateText({
-      model: wx(FALLBACK_MODEL),
-      system,
-      prompt,
-      maxOutputTokens: 1024,
-    });
+    const { text } = await withRetry(
+      () => generateText({ model: wx(FALLBACK_MODEL), system, prompt, maxOutputTokens: 1024 }),
+      FALLBACK_MODEL
+    );
     return text;
   }
 }

@@ -27,6 +27,7 @@
 import { NextResponse } from "next/server";
 import { streamText, generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 import { loadPersonas } from "@/backend/lib/debate/load-personas";
 import type { TranscriptEntry, Objection } from "@/backend/lib/debate/state";
 
@@ -87,11 +88,10 @@ async function routeToPersonas(
   ].join("\n");
 
   try {
-    const result = await generateText({
-      model: wx(ROUTING_MODEL),
-      prompt: routingPrompt,
-      maxOutputTokens: 64,
-    });
+    const result = await withRetry(
+      () => generateText({ model: wx(ROUTING_MODEL), prompt: routingPrompt, maxOutputTokens: 64 }),
+      ROUTING_MODEL
+    );
 
     const raw = result.text.trim();
     // Extract JSON array even if the model wraps it in backticks or prose
@@ -141,12 +141,7 @@ async function* streamPersonaResponse(
   ].join("\n");
 
   async function* run(model: string): AsyncGenerator<string> {
-    const result = await streamText({
-      model: wx(model),
-      system,
-      messages: [{ role: "user", content: question }],
-      maxOutputTokens: 768,
-    });
+    const result = streamText({ model: wx(model), system, messages: [{ role: "user", content: question }], maxOutputTokens: 768 });
     for await (const chunk of result.textStream) {
       yield chunk;
     }
@@ -192,12 +187,7 @@ async function* streamBoardFallback(
   ].join("\n");
 
   async function* run(model: string): AsyncGenerator<string> {
-    const result = await streamText({
-      model: wx(model),
-      system,
-      messages: [{ role: "user", content: question }],
-      maxOutputTokens: 768,
-    });
+    const result = streamText({ model: wx(model), system, messages: [{ role: "user", content: question }], maxOutputTokens: 768 });
     for await (const chunk of result.textStream) {
       yield chunk;
     }

@@ -10,47 +10,13 @@
  */
 import { streamText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 import type { PersonaConfig } from "@/backend/lib/debate/load-personas";
 import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
 
 const FALLBACK_MODEL = "meta-llama/llama-3-3-70b-instruct";
-
-/** Sleep for `ms` milliseconds. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Run `fn`, retrying on HTTP 429 (rate limit) with exponential back-off.
- * Gives up after `maxAttempts` and re-throws the last error.
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  label: string,
-  maxAttempts = 4
-): Promise<T> {
-  let delay = 1000; // start at 1 s
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const status =
-        (err as { status?: number; statusCode?: number })?.status ??
-        (err as { status?: number; statusCode?: number })?.statusCode;
-      const isRateLimit = status === 429;
-      if (!isRateLimit || attempt === maxAttempts) throw err;
-      console.warn(
-        `[debater][${label}] 429 rate-limit — retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
-      );
-      await sleep(delay);
-      delay = Math.min(delay * 2, 16000);
-    }
-  }
-  // unreachable, but satisfies TypeScript
-  throw new Error(`[debater][${label}] exhausted retries`);
-}
 
 async function callWithFallback(
   model: string,
