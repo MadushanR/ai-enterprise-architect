@@ -13,7 +13,6 @@ const REGION_BASE_URLS: Record<string, string> = {
 
 const IAM_TOKEN_URL = "https://iam.cloud.ibm.com/identity/token";
 const WATSONX_API_VERSION = "2026-04-20";
-const HEALTH_PROMPT = "Reply with a single word: ready";
 
 // Models the debate engine requires. Missing ones are surfaced as warnings,
 // not hard failures — the health check still confirms connectivity.
@@ -142,49 +141,12 @@ export async function GET() {
     availableChatModels[0] ??
     "ibm/granite-4-h-small";
 
-  // ── 4. Text-generation call ───────────────────────────────────────────────
-  // Raw fetch — we hold the bearer token from step 2 and inject it directly.
-  // The watsonx-ai-provider SDK always re-exchanges its apiKey through IAM
-  // internally, so passing a pre-fetched token to it would cause a second
-  // failed exchange. Using fetch directly keeps the two failure steps cleanly
-  // attributed.
+  // ── 4. Connectivity confirmed via IAM + model catalog (no inference call) ──
+  // We intentionally skip a live inference probe here. The IAM token exchange
+  // above already proves the API key is valid; the model catalog call in step 3
+  // proves the region endpoint is reachable. Firing a real chat completion would
+  // burn free-tier token quota on every page load and every 60-second poll.
   try {
-    const wxRes = await fetch(
-      `${baseURL}/ml/v1/text/chat?version=${WATSONX_API_VERSION}`,
-      {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({
-          model_id: probeModel,
-          project_id: projectId,
-          messages: [{ role: "user", content: HEALTH_PROMPT }],
-          max_tokens: 20,
-        }),
-      },
-    );
-
-    if (!wxRes.ok) {
-      const body = await wxRes.text().catch(() => "(unreadable body)");
-      return NextResponse.json(
-        {
-          ok: false,
-          step: "inference",
-          model: probeModel,
-          region,
-          availableChatModels,
-          missingRequiredModels: missingModels,
-          error: `watsonx inference failed with HTTP ${wxRes.status}`,
-          detail: body,
-        },
-        { status: 502 },
-      );
-    }
-
-    const wxJson = (await wxRes.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const generatedText = wxJson.choices?.[0]?.message?.content ?? "";
-
     // ── 5. STT provider status (task 5.4) ────────────────────────────────────
     const sttProvider = process.env.STT_PROVIDER ?? "granite";
     const sttConfigured =
@@ -226,7 +188,6 @@ export async function GET() {
         region,
         baseURL,
         probeModel,
-        generatedText,
         availableChatModels,
         // Non-empty means the debate engine will fail at runtime even though
         // the connectivity check itself passed.
@@ -241,12 +202,11 @@ export async function GET() {
     return NextResponse.json(
       {
         ok: false,
-        step: "inference",
-        model: probeModel,
+        step: "health",
         region,
         availableChatModels,
         missingRequiredModels: missingModels,
-        error: "Network error reaching watsonx inference endpoint",
+        error: "Health check failed",
         detail: err instanceof Error ? err.message : String(err),
       },
       { status: 502 },

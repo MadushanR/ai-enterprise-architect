@@ -10,27 +10,19 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import RoundCounter from "@/src/components/RoundCounter";
-import WarRoomFeed from "@/src/components/WarRoomFeed";
+import WarRoomFeed, { type WarRoomFeedHandle } from "@/src/components/WarRoomFeed";
+import ChatPanel, { type PersonaSummary } from "@/src/components/ChatPanel";
 import MermaidRenderer, { type MermaidRendererHandle } from "@/src/components/MermaidRenderer";
-import ChaosBeatIndicator, { type ChaosState } from "@/src/components/ChaosBeatIndicator";
 import AudioPanel from "@/src/components/AudioPanel";
 import type { CreativeBrief } from "@/src/app/api/discovery/route";
 import type { DiagramResult } from "@/backend/lib/mermaid/generate";
 import type { Objection, TranscriptEntry } from "@/backend/lib/debate/state";
-import { parseClassDefPatch } from "@/backend/lib/chaos/classDef";
+import { useChaosStore } from "@/src/store/chaosStore";
 
 // ── Types ──────────────────────────────────────────────────────
 type AppPhase = "idle" | "discovering" | "ready" | "debating" | "synthesised";
-
-interface PersonaSummary {
-  id: string;
-  name: string;
-  role_type: "debater" | "guardian";
-  accent_color: string | null;
-  enabled: boolean;
-  turn_order: number;
-}
 
 // ── Session persistence types (task 6.2) ───────────────────────
 const SESSION_KEY = "arb:sessions";
@@ -75,6 +67,8 @@ interface HealthState {
 
 // ── Component ──────────────────────────────────────────────────
 export default function Home() {
+  const router = useRouter();
+  const { setInputs: setChaosInputs } = useChaosStore();
   const [idea, setIdea] = useState("");
   const [brief, setBrief] = useState<CreativeBrief | null>(null);
   const [editableBrief, setEditableBrief] = useState<CreativeBrief | null>(null);
@@ -90,16 +84,13 @@ export default function Home() {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [objections, setObjections] = useState<Objection[]>([]);
   const [diagram, setDiagram] = useState<DiagramResult | null>(null);
+  const [diagramExpanded, setDiagramExpanded] = useState(false);
   const [diagramLoading, setDiagramLoading] = useState(false);
   const [deckLoading, setDeckLoading] = useState(false);
-  // Phase 4 — chaos simulator state
-  const [chaosBeats, setChaosBeats] = useState<Array<{ state: ChaosState; label: string }>>([]);
-  const [chaosCurrent, setChaosCurrent] = useState(-1);
-  const [chaosLabel, setChaosLabel] = useState("");
-  const [chaosRunning, setChaosRunning] = useState(false);
-  const [chaosTotal, setChaosTotal] = useState(0);
-  // Ref to the rendered MermaidRenderer so we can call applyClassDefs imperatively
+  // Phase 4 — full simulation runs on /chaos page (useChaosStore + router.push)
   const diagramRef = useRef<MermaidRendererHandle>(null);
+  // Ref to WarRoomFeed so we can imperatively stop the debate
+  const warRoomRef = useRef<WarRoomFeedHandle>(null);
   // Detect prefers-reduced-motion for the chaos delay flag
   const reducedMotionRef = useRef(false);
   // Personas loaded from API for agent selector
@@ -117,6 +108,7 @@ export default function Home() {
   });
   // Phase 6.2 — session persistence
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
+  const [sessionSavedFlash, setSessionSavedFlash] = useState(false);
 
   async function handleAnalyse() {
     if (!idea.trim()) return;
@@ -133,11 +125,6 @@ export default function Home() {
     setFinalProposal(null);
     setTranscript([]);
     setObjections([]);
-    setChaosBeats([]);
-    setChaosCurrent(-1);
-    setChaosLabel("");
-    setChaosRunning(false);
-    setChaosTotal(0);
 
     try {
       // Load personas in parallel with brief generation
@@ -189,6 +176,12 @@ export default function Home() {
   }, []);
 
   const handleDebateComplete = useCallback(() => {
+    setPhase("synthesised");
+    setDebateComplete(true);
+  }, []);
+
+  const handleStopDebate = useCallback(() => {
+    warRoomRef.current?.stop();
     setPhase("synthesised");
     setDebateComplete(true);
   }, []);
@@ -248,6 +241,26 @@ export default function Home() {
     }
   }
 
+  function handleExportAll() {
+    const slug = idea.trim().slice(0, 40).replace(/\s+/g, "-").replace(/[^a-z0-9-]/gi, "").toLowerCase() || "war-room";
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      idea,
+      brief: editableBrief ?? brief,
+      transcript,
+      objections,
+      synthesis,
+      diagram: diagram ?? null,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `war-room-${slug}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleDownloadDeck() {
     if (!synthesis || !finalProposal || !diagram || !brief) return;
     setDeckLoading(true);
@@ -303,6 +316,9 @@ export default function Home() {
       saveSessionsToStorage(next);
       return next;
     });
+    // Flash confirmation for 2 s
+    setSessionSavedFlash(true);
+    setTimeout(() => setSessionSavedFlash(false), 2000);
   }
 
   function handleLoadSession(sessionId: string) {
@@ -322,11 +338,6 @@ export default function Home() {
     setRound(-1);
     setPhase("synthesised");
     setError(null);
-    setChaosBeats([]);
-    setChaosCurrent(-1);
-    setChaosLabel("");
-    setChaosRunning(false);
-    setChaosTotal(0);
   }
 
   // ── Phase 6.1: Live health badge ────────────────────────────
@@ -388,84 +399,20 @@ export default function Home() {
     }
   }, []);
 
-  async function handleSimulateChaos() {
-    if (!synthesis || !diagram?.valid) return;
-    setChaosBeats([]);
-    setChaosCurrent(-1);
-    setChaosLabel("");
-    setChaosRunning(true);
-    setChaosTotal(0);
-
-    try {
-      const res = await fetch("/api/chaos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: synthesis,
-          reducedMotion: reducedMotionRef.current,
-        }),
-      });
-
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      outer: while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
-
-        for (const chunk of lines) {
-          if (!chunk.startsWith("data: ")) continue;
-          const raw = chunk.slice(6).trim();
-          if (!raw) continue;
-
-          let event: Record<string, unknown>;
-          try { event = JSON.parse(raw) as Record<string, unknown>; }
-          catch { continue; }
-
-          // Break the outer reader loop directly — inner break only exits the for.
-          if (event.type === "done") break outer;
-          if (event.type === "error") {
-            console.error("[chaos]", event.message);
-            break outer;
-          }
-
-          // Beat event
-          const beatIndex = event.beat as number;
-          const state = event.state as ChaosState;
-          const label = event.label as string;
-          const total = event.total as number;
-          const patch = event.patch as string;
-
-          setChaosTotal(total);
-          setChaosCurrent(beatIndex);
-          setChaosLabel(label);
-          setChaosBeats((prev) => {
-            const next = [...prev];
-            // Fill any gaps with the incoming beat
-            while (next.length <= beatIndex) next.push({ state, label });
-            next[beatIndex] = { state, label };
-            return next;
-          });
-
-          // Apply classDef patch to the live SVG — no re-render
-          if (diagramRef.current?.isRendered()) {
-            const nodeStyles = parseClassDefPatch(patch);
-            diagramRef.current.applyClassDefs(nodeStyles);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("[chaos simulate]", err);
-    } finally {
-      setChaosRunning(false);
+  // Close expanded diagram on Escape key
+  useEffect(() => {
+    if (!diagramExpanded) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setDiagramExpanded(false);
     }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [diagramExpanded]);
+
+  function handleSimulateChaos() {
+    if (!synthesis || !diagram?.valid) return;
+    setChaosInputs(synthesis, diagram.diagram);
+    router.push("/chaos");
   }
 
   return (
@@ -483,7 +430,7 @@ export default function Home() {
           {process.env.NEXT_PUBLIC_APP_NAME ?? "Architecture Review Board"}
         </h1>
 
-        <RoundCounter round={round} complete={debateComplete} />
+        <RoundCounter round={round} total={maxRounds} complete={debateComplete} />
 
         {/* Right-side header controls */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -950,42 +897,70 @@ export default function Home() {
                 </div>
 
                 {/* Rounds selector */}
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="rounds-input"
-                    className="text-[0.6875rem]"
-                    style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
-                  >
-                    ROUNDS
-                  </label>
-                  <input
-                    id="rounds-input"
-                    type="number"
-                    min={1}
-                    value={maxRounds}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      if (!isNaN(v) && v >= 1) setMaxRounds(v);
-                    }}
-                    style={{
-                      fontFamily: "var(--font-geist-mono)",
-                      fontSize: "0.8125rem",
-                      width: "56px",
-                      padding: "3px 6px",
-                      backgroundColor: "var(--col-surface)",
-                      color: "var(--col-ink)",
-                      border: "1px solid var(--col-cobalt)",
-                      borderRadius: "3px",
-                      textAlign: "center",
-                    }}
-                    aria-label="Number of debate rounds"
-                  />
+                <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className="text-[0.6875rem]"
                     style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
                   >
-                    max
+                    ROUNDS
                   </span>
+                  {/* AUTO toggle */}
+                  <label
+                    className="flex items-center gap-1 cursor-pointer select-none"
+                    style={{ fontFamily: "var(--font-geist-mono)", fontSize: "0.8125rem" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={maxRounds === 0}
+                      onChange={(e) => setMaxRounds(e.target.checked ? 0 : 3)}
+                      style={{ accentColor: "var(--col-cobalt)" }}
+                      aria-label="Auto mode — debate until all agents agree"
+                    />
+                    <span style={{ color: maxRounds === 0 ? "var(--col-cobalt)" : "var(--col-muted)" }}>
+                      AUTO
+                    </span>
+                  </label>
+                  {/* Fixed-count input — hidden in auto mode */}
+                  {maxRounds !== 0 && (
+                    <>
+                      <input
+                        id="rounds-input"
+                        type="number"
+                        min={1}
+                        value={maxRounds}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          if (!isNaN(v) && v >= 1) setMaxRounds(v);
+                        }}
+                        style={{
+                          fontFamily: "var(--font-geist-mono)",
+                          fontSize: "0.8125rem",
+                          width: "56px",
+                          padding: "3px 6px",
+                          backgroundColor: "var(--col-surface)",
+                          color: "var(--col-ink)",
+                          border: "1px solid var(--col-cobalt)",
+                          borderRadius: "3px",
+                          textAlign: "center",
+                        }}
+                        aria-label="Number of debate rounds"
+                      />
+                      <span
+                        className="text-[0.6875rem]"
+                        style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
+                      >
+                        max
+                      </span>
+                    </>
+                  )}
+                  {maxRounds === 0 && (
+                    <span
+                      className="text-[0.6875rem]"
+                      style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
+                    >
+                      until consensus
+                    </span>
+                  )}
                 </div>
               </div>
             </section>
@@ -1025,14 +1000,31 @@ export default function Home() {
             </button>
           )}
 
-          {/* Debate/synthesis in-progress indicator in left pane */}
+          {/* Debate/synthesis in-progress indicator + stop button in left pane */}
           {phase === "debating" && (
-            <p
-              className="mt-2 text-[0.6875rem]"
-              style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
-            >
-              Debate running…
-            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              <p
+                className="text-[0.6875rem]"
+                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
+              >
+                Debate running…
+              </p>
+              <button
+                onClick={handleStopDebate}
+                className="w-full py-1.5 text-[0.6875rem]"
+                style={{
+                  fontFamily: "var(--font-geist-mono)",
+                  backgroundColor: "var(--col-surface)",
+                  color: "var(--col-chaos-failure)",
+                  border: "1px solid var(--col-chaos-failure)",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+                title="Abort the running debate and go to synthesis"
+              >
+                ■ Stop
+              </button>
+            </div>
           )}
           {phase === "synthesised" && (
             <div className="mt-2 flex flex-col gap-2">
@@ -1048,21 +1040,22 @@ export default function Home() {
                 className="w-full py-1.5 text-[0.6875rem]"
                 style={{
                   fontFamily: "var(--font-geist-mono)",
-                  backgroundColor: "var(--col-surface)",
-                  color: "var(--col-muted)",
-                  border: "1px solid var(--col-rule)",
+                  backgroundColor: sessionSavedFlash ? "var(--col-surface)" : "var(--col-surface)",
+                  color: sessionSavedFlash ? "var(--col-ink)" : "var(--col-muted)",
+                  border: sessionSavedFlash ? "1px solid var(--col-ink)" : "1px solid var(--col-rule)",
                   borderRadius: "4px",
                   cursor: "pointer",
+                  transition: "color 0.2s, border-color 0.2s",
                 }}
                 title="Save this debate session to browser storage"
               >
-                ↓ Save Session
+                {sessionSavedFlash ? "✓ Saved" : "↓ Save Session"}
               </button>
             </div>
           )}
 
-          {/* ── Load Session picker (task 6.2) — only when idle and sessions exist ── */}
-          {phase === "idle" && savedSessions.length > 0 && (
+          {/* ── Load Session picker (task 6.2) — show when idle OR just after saving ── */}
+          {(phase === "idle" || phase === "synthesised") && savedSessions.length > 0 && (
             <section aria-labelledby="load-session-heading" className="mt-3">
               <h2
                 id="load-session-heading"
@@ -1124,31 +1117,44 @@ export default function Home() {
 
         {/* ── CENTER PANE — War Room feed (flex-grow) ─────────── */}
         <main
-          className="flex flex-col flex-1 overflow-y-auto p-6"
+          className="flex flex-col flex-1 overflow-y-auto"
           style={{ backgroundColor: "var(--col-base)" }}
           aria-label="War Room debate feed"
         >
-          {phase === "discovering" && (
-            <div className="flex flex-col items-center justify-center h-full gap-3">
-              <span
-                className="text-sm animate-pulse"
-                style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
-              >
-                Generating creative brief…
-              </span>
-            </div>
-          )}
+          <div className="flex flex-col flex-1 p-6">
+            {phase === "discovering" && (
+              <div className="flex flex-col items-center justify-center h-full gap-3">
+                <span
+                  className="text-sm animate-pulse"
+                  style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}
+                >
+                  Generating creative brief…
+                </span>
+              </div>
+            )}
 
-          <WarRoomFeed
-            proposal={debateProposal}
-            agents={selectedAgents.length > 0 ? selectedAgents : undefined}
-            maxRounds={maxRounds}
-            guardianIds={guardianIds}
-            onRoundChange={handleRoundChange}
-            onSynthesis={handleSynthesis}
-            onComplete={handleDebateComplete}
-            onDebateState={handleDebateState}
-          />
+            <WarRoomFeed
+              ref={warRoomRef}
+              proposal={debateProposal}
+              agents={selectedAgents.length > 0 ? selectedAgents : undefined}
+              maxRounds={maxRounds}
+              guardianIds={guardianIds}
+              onRoundChange={handleRoundChange}
+              onSynthesis={handleSynthesis}
+              onComplete={handleDebateComplete}
+              onDebateState={handleDebateState}
+            />
+          </div>
+
+          {/* ── Post-debate chat — visible once synthesis is complete ── */}
+          {phase === "synthesised" && synthesis && (
+            <ChatPanel
+              synthesis={synthesis}
+              transcript={transcript}
+              objections={objections}
+              personas={personas}
+            />
+          )}
         </main>
 
         {/* ── RIGHT PANE — Diagram / Chaos / Deck / Audio (360px) ─ */}
@@ -1194,12 +1200,40 @@ export default function Home() {
             </div>
 
             {diagram ? (
-              <MermaidRenderer
-                ref={diagramRef}
-                diagram={diagram.diagram}
-                valid={diagram.valid}
-                parseError={diagram.error}
-              />
+              <button
+                onClick={() => diagram.valid && setDiagramExpanded(true)}
+                aria-label="Expand diagram"
+                style={{
+                  display: "block",
+                  width: "100%",
+                  padding: 0,
+                  background: "none",
+                  border: "none",
+                  cursor: diagram.valid ? "zoom-in" : "default",
+                  textAlign: "left",
+                }}
+              >
+                <MermaidRenderer
+                  ref={diagramRef}
+                  diagram={diagram.diagram}
+                  valid={diagram.valid}
+                  parseError={diagram.error}
+                />
+                {diagram.valid && (
+                  <p
+                    style={{
+                      marginTop: "4px",
+                      fontSize: "0.6rem",
+                      fontFamily: "var(--font-geist-mono)",
+                      color: "var(--col-muted)",
+                      textAlign: "right",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    click to expand
+                  </p>
+                )}
+              </button>
             ) : (
               <div
                 className="flex items-center justify-center"
@@ -1219,6 +1253,81 @@ export default function Home() {
             )}
           </section>
 
+          {/* Diagram lightbox modal */}
+          {diagramExpanded && diagram?.valid && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Expanded architecture diagram"
+              onClick={() => setDiagramExpanded(false)}
+              onKeyDown={(e) => e.key === "Escape" && setDiagramExpanded(false)}
+              tabIndex={-1}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9999,
+                backgroundColor: "rgba(0,0,0,0.82)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "32px",
+              }}
+            >
+              {/* Stop click-through on the inner panel */}
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: "relative",
+                  width: "min(1200px, 95vw)",
+                  maxHeight: "90vh",
+                  backgroundColor: "var(--col-base)",
+                  border: "1px solid var(--col-rule)",
+                  borderRadius: "6px",
+                  overflowY: "auto",
+                  padding: "24px",
+                }}
+              >
+                <button
+                  onClick={() => setDiagramExpanded(false)}
+                  aria-label="Close expanded diagram"
+                  style={{
+                    position: "absolute",
+                    top: "10px",
+                    right: "12px",
+                    background: "none",
+                    border: "none",
+                    color: "var(--col-muted)",
+                    fontSize: "1.25rem",
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    padding: "4px 8px",
+                    borderRadius: "3px",
+                  }}
+                >
+                  ×
+                </button>
+                <p
+                  style={{
+                    marginBottom: "16px",
+                    fontSize: "0.6875rem",
+                    fontFamily: "var(--font-plex-condensed)",
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    color: "var(--col-muted)",
+                  }}
+                >
+                  Architecture Diagram
+                </p>
+                <MermaidRenderer
+                  diagram={diagram.diagram}
+                  valid={diagram.valid}
+                  parseError={diagram.error}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Chaos Simulator */}
           <section
             className="flex flex-col p-4 border-b"
@@ -1233,37 +1342,22 @@ export default function Home() {
               Chaos Simulator
             </h2>
 
-            {/* Beat indicator — shown once a simulation has run */}
-            {chaosBeats.length > 0 && (
-              <div className="mb-3">
-                <ChaosBeatIndicator
-                  beats={chaosBeats}
-                  current={chaosCurrent}
-                  total={chaosTotal}
-                  stateLabel={chaosLabel}
-                />
-              </div>
-            )}
-
             <button
               onClick={handleSimulateChaos}
-              disabled={!diagram?.valid || chaosRunning}
+              disabled={!diagram?.valid}
               className="w-full py-2 text-sm font-medium"
               style={{
                 fontFamily: "var(--font-geist-sans)",
                 fontSize: "0.875rem",
-                backgroundColor:
-                  !diagram?.valid || chaosRunning ? "var(--col-rule)" : "var(--col-chaos-strain)",
-                color:
-                  !diagram?.valid || chaosRunning ? "var(--col-muted)" : "#0e1117",
+                backgroundColor: !diagram?.valid ? "var(--col-rule)" : "var(--col-chaos-strain)",
+                color: !diagram?.valid ? "var(--col-muted)" : "#0e1117",
                 border: "1px solid var(--col-rule)",
                 borderRadius: "4px",
-                cursor: !diagram?.valid || chaosRunning ? "not-allowed" : "pointer",
+                cursor: !diagram?.valid ? "not-allowed" : "pointer",
               }}
               aria-label="Simulate Traffic Spike"
-              aria-busy={chaosRunning}
             >
-              {chaosRunning ? "Simulating…" : chaosCurrent >= 0 ? "↺ Re-simulate" : "▶ Simulate Traffic Spike"}
+              ▶ Simulate Traffic Spike
             </button>
 
             {!diagram?.valid && (
@@ -1276,7 +1370,7 @@ export default function Home() {
             )}
           </section>
 
-          {/* Deck Export */}
+          {/* Export */}
           <section
             className="flex flex-col p-4 border-b"
             style={{ borderColor: "var(--col-rule)" }}
@@ -1287,39 +1381,62 @@ export default function Home() {
               className="text-[0.6875rem] font-semibold uppercase tracking-widest mb-3"
               style={{ fontFamily: "var(--font-plex-condensed)", color: "var(--col-muted)" }}
             >
-              Deck Export
+              Export
             </h2>
-            <button
-              onClick={handleDownloadDeck}
-              disabled={!synthesis || !diagram?.valid || deckLoading}
-              className="w-full py-2 text-sm font-medium"
-              style={{
-                fontFamily: "var(--font-geist-sans)",
-                fontSize: "0.875rem",
-                backgroundColor:
-                  !synthesis || !diagram?.valid || deckLoading
-                    ? "var(--col-rule)"
-                    : "var(--col-cobalt)",
-                color:
-                  !synthesis || !diagram?.valid || deckLoading
-                    ? "var(--col-muted)"
-                    : "var(--col-ink)",
-                border: "1px solid var(--col-rule)",
-                borderRadius: "4px",
-                cursor:
-                  !synthesis || !diagram?.valid || deckLoading ? "not-allowed" : "pointer",
-              }}
-              aria-label="Download pitch deck"
-              aria-busy={deckLoading}
-            >
-              {deckLoading ? "Building deck…" : "↓ Download .pptx"}
-            </button>
+            <div className="flex flex-col gap-2">
+              {/* Export All — JSON bundle, no diagram required */}
+              <button
+                onClick={handleExportAll}
+                disabled={!synthesis}
+                className="w-full py-2 text-sm font-medium"
+                style={{
+                  fontFamily: "var(--font-geist-sans)",
+                  fontSize: "0.875rem",
+                  backgroundColor: !synthesis ? "var(--col-rule)" : "var(--col-cobalt)",
+                  color: !synthesis ? "var(--col-muted)" : "var(--col-ink)",
+                  border: "1px solid var(--col-rule)",
+                  borderRadius: "4px",
+                  cursor: !synthesis ? "not-allowed" : "pointer",
+                }}
+                aria-label="Export all war room data as JSON"
+                title="Downloads brief, transcript, objections, synthesis and diagram as a single JSON file"
+              >
+                ↓ Export All (.json)
+              </button>
+
+              {/* Pitch deck — requires a valid diagram */}
+              <button
+                onClick={handleDownloadDeck}
+                disabled={!synthesis || !diagram?.valid || deckLoading}
+                className="w-full py-2 text-sm font-medium"
+                style={{
+                  fontFamily: "var(--font-geist-sans)",
+                  fontSize: "0.875rem",
+                  backgroundColor:
+                    !synthesis || !diagram?.valid || deckLoading
+                      ? "var(--col-rule)"
+                      : "var(--col-surface)",
+                  color:
+                    !synthesis || !diagram?.valid || deckLoading
+                      ? "var(--col-muted)"
+                      : "var(--col-ink)",
+                  border: "1px solid var(--col-rule)",
+                  borderRadius: "4px",
+                  cursor:
+                    !synthesis || !diagram?.valid || deckLoading ? "not-allowed" : "pointer",
+                }}
+                aria-label="Download pitch deck"
+                aria-busy={deckLoading}
+              >
+                {deckLoading ? "Building deck…" : "↓ Download .pptx"}
+              </button>
+            </div>
             {synthesis && !diagram?.valid && (
               <p
-                className="mt-1 text-[0.6875rem]"
+                className="mt-2 text-[0.6875rem]"
                 style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-muted)" }}
               >
-                Generate a valid diagram first
+                Generate a diagram to unlock .pptx
               </p>
             )}
           </section>

@@ -6,7 +6,7 @@
  * Emits round/synthesis/complete events to parent via callbacks.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 import AgentTurnCard, { type TurnStatus } from "@/src/components/AgentTurnCard";
 import type { Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 interface TurnDisplay {
@@ -42,26 +42,40 @@ interface WarRoomFeedProps {
   onDebateState?: (state: DebateStateSnapshot) => void;
 }
 
+export interface WarRoomFeedHandle {
+  stop: () => void;
+}
+
 type SSEEvent =
   | { type: "turn"; agent: TranscriptEntry["agent"]; round: number; text: string; objections: Objection[] }
   | { type: "synthesis"; text: string; unresolvedObjections: Objection[]; rounds: number }
   | { type: "error"; message: string };
 
-export default function WarRoomFeed({
-  proposal,
-  agents,
-  maxRounds,
-  guardianIds = [],
-  onRoundChange,
-  onSynthesis,
-  onComplete,
-  onDebateState,
-}: WarRoomFeedProps) {
+const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function WarRoomFeed(
+  {
+    proposal,
+    agents,
+    maxRounds,
+    guardianIds = [],
+    onRoundChange,
+    onSynthesis,
+    onComplete,
+    onDebateState,
+  }: WarRoomFeedProps,
+  ref
+) {
   const [turns, setTurns] = useState<TurnDisplay[]>([]);
   const [synthesis, setSynthesis] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    stop: () => {
+      abortRef.current?.abort();
+    },
+  }));
+
   const bottomRef = useRef<HTMLDivElement>(null);
   // Accumulate transcript + last proposal + objections in refs so we can pass
   // them to onDebateState once without triggering re-renders
@@ -300,4 +314,6 @@ export default function WarRoomFeed({
       <div ref={bottomRef} aria-hidden="true" />
     </div>
   );
-}
+});
+
+export default WarRoomFeed;

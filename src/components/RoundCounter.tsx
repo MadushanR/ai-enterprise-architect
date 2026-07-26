@@ -8,22 +8,37 @@
  * prefers-reduced-motion: snap state, no closing animation (DESIGN.md §6, §10).
  */
 
-const TOTAL_ROUNDS = 3;
-
 interface RoundCounterProps {
   /** 0-based current round index. -1 = not started. */
   round: number;
+  /**
+   * Total rounds configured for this session (default 3).
+   * Pass 0 for auto mode — segments grow dynamically with no fixed cap.
+   */
+  total?: number;
   /** True when synthesis has fired (all segments close into a solid bar). */
   complete?: boolean;
 }
 
-export default function RoundCounter({ round, complete = false }: RoundCounterProps) {
+export default function RoundCounter({ round, total = 3, complete = false }: RoundCounterProps) {
+  const autoMode = total === 0;
+
+  // In auto mode the label reflects the current round without a cap.
   const label =
     complete
       ? "Synthesis complete"
       : round < 0
       ? "Debate not started"
-      : `Round ${round + 1} of ${TOTAL_ROUNDS}`;
+      : autoMode
+      ? `Round ${round + 1} — auto`
+      : `Round ${round + 1} of ${total}`;
+
+  // In auto mode we render as many filled segments as rounds completed, plus
+  // one pending segment (to signal "still going"). In fixed mode the count is
+  // always `total` segments with the first `round+1` filled.
+  const segmentCount = autoMode
+    ? Math.max(1, round + 2)   // filled rounds + 1 upcoming
+    : total;
 
   return (
     <div
@@ -37,11 +52,11 @@ export default function RoundCounter({ round, complete = false }: RoundCounterPr
         {complete ? (
           /* Synthesis fired: single full-width solid bar */
           <div
-            className="h-[10px] w-[43px] bg-cobalt circuit-close"
-            style={{ borderRadius: "1px" }}
+            className="h-[10px] bg-cobalt circuit-close"
+            style={{ borderRadius: "1px", width: `${segmentCount * 13 + (segmentCount - 1) * 3}px` }}
           />
         ) : (
-          Array.from({ length: TOTAL_ROUNDS }).map((_, i) => {
+          Array.from({ length: segmentCount }).map((_, i) => {
             const filled = round >= 0 && i <= round;
             return (
               <div

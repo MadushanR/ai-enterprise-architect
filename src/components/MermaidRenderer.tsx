@@ -197,42 +197,42 @@ const MermaidRenderer = forwardRef<MermaidRendererHandle, MermaidRendererProps>(
       );
     }
 
-    // ── Skeleton while rendering ─────────────────────────────────────────────
-    if (!rendered && !renderError) {
-      return (
-        <div
-          aria-busy="true"
-          aria-label="Rendering diagram…"
-          style={{
-            height: "200px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "var(--col-base)",
-            border: "1px solid var(--col-rule)",
-            borderRadius: "4px",
-            color: "var(--col-muted)",
-            fontFamily: "var(--font-geist-mono)",
-            fontSize: "0.75rem",
-          }}
-        >
-          <span className="animate-pulse">Rendering diagram…</span>
-        </div>
-      );
-    }
-
-    // ── Rendered SVG ─────────────────────────────────────────────────────────
+    // ── Container is always mounted so containerRef is available to the render
+    // effect. The skeleton overlay is shown until the SVG has been injected.
     return (
-      <div
-        ref={containerRef}
-        aria-label="Architecture diagram"
-        style={{
-          width: "100%",
-          overflowX: "auto",
-          backgroundColor: "var(--col-base)",
-          borderRadius: "4px",
-        }}
-      />
+      <>
+        {!rendered && (
+          <div
+            aria-busy="true"
+            aria-label="Rendering diagram…"
+            style={{
+              height: "200px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "var(--col-base)",
+              border: "1px solid var(--col-rule)",
+              borderRadius: "4px",
+              color: "var(--col-muted)",
+              fontFamily: "var(--font-geist-mono)",
+              fontSize: "0.75rem",
+            }}
+          >
+            <span className="animate-pulse">Rendering diagram…</span>
+          </div>
+        )}
+        <div
+          ref={containerRef}
+          aria-label="Architecture diagram"
+          style={{
+            width: "100%",
+            overflowX: "auto",
+            backgroundColor: "var(--col-base)",
+            borderRadius: "4px",
+            display: rendered ? "block" : "none",
+          }}
+        />
+      </>
     );
   }
 );
