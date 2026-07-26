@@ -3,7 +3,7 @@
 ## Purpose
 Run the multi-agent architecture debate as a bounded, resumable LangGraph
 state machine — never an open-ended chain that might not converge. The set
-of agents is not hardcoded; it is loaded at runtime from `/personas/agents/`
+of agents is not hardcoded; it is loaded at runtime from `backend/personas/agents/`
 by the persona loader, so the debate adapts to however many personas are
 enabled without changing any graph code.
 
@@ -31,7 +31,7 @@ triggered after Phase 1 discovery produces a creative brief.
    - Otherwise increment round, feed objections back to the first debater.
 5. If round hits 3 without resolution → force synthesis anyway; flag all
    unresolved objections explicitly in the output (never drop them silently).
-6. Synthesis step (single call to `ibm/granite-3-30b-instruct`, outside the
+6. Synthesis step (single call to `meta-llama/llama-3-3-70b-instruct`, outside the
    loop): produce a canonical architecture description for diagram and deck.
 
 ## Guardrails

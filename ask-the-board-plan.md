@@ -33,7 +33,7 @@ responses as SSE events.
 
 **Expected Outcomes:**
 - `POST /api/ask-board` accepts `{ message, synthesis, transcript, objections, history }`.
-- Step 1: calls `ibm/granite-3-30b-instruct` (synthesis model, once) with the full transcript
+- Step 1: calls `meta-llama/llama-3-3-70b-instruct` (synthesis model, once) with the full transcript
   and question to produce a JSON array of the 1–3 most relevant persona IDs.
 - Step 2: for each matched persona, loads that persona's config (system prompt + model) via
   `loadPersonas()`, then streams a response using the persona's own model and its own
@@ -69,7 +69,7 @@ responses as SSE events.
   [`src/app/api/chat/route.ts`](src/app/api/chat/route.ts).
 - `TranscriptEntry` type: `{ agent: string; turn: string; round: number }` from
   [`backend/lib/debate/state.ts`](backend/lib/debate/state.ts).
-- Routing model: `ibm/granite-3-30b-instruct` (synthesis tier per AGENTS.md — used once per
+- Routing model: `meta-llama/llama-3-3-70b-instruct` (synthesis tier per AGENTS.md — used once per
   request, not in the response loop).
 - Persona models: use the `persona.model` field; fallback to
   `meta-llama/llama-3-3-70b-instruct`.

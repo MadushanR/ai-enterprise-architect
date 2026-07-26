@@ -171,13 +171,13 @@ Four specialized debater personas and one guardian persona, each defined as a Ma
 | **FinOps** | Critiques for cost efficiency and TCO | `ibm/granite-4-h-small` |
 | **Security** | Evaluates against BYOC compliance mandates (IAM, data residency) | `ibm/granite-guardian-3-8b` |
 
-Synthesis is performed exactly once per session by `ibm/granite-3-30b-instruct` — never in the debate loop.
+Synthesis is performed exactly once per session by `meta-llama/llama-3-3-70b-instruct` — never in the debate loop.
 
 > **Region note:** `ibm/granite-4-h-small` is verified in **us-south**. The fallback model for `ca-tor` is `meta-llama/llama-3-3-70b-instruct`. Set `WATSONX_AI_REGION=us-south` in your `.env.local` for full Granite support.
 
 ## 🛠️ Tech Stack
 
-* **LLM Engine:** IBM Granite (`granite-4-h-small`, `granite-guardian-3-8b`, `granite-3-30b-instruct`) via `watsonx-ai-provider`
+* **LLM Engine:** IBM Granite (`granite-4-h-small`, `granite-guardian-3-8b`) and Llama (`llama-3-3-70b-instruct`) via `watsonx-ai-provider`
 * **AI SDK:** Vercel AI SDK (`ai` package) — `generateText` / `streamText`
 * **Orchestration:** LangGraph (`@langchain/langgraph`) — bounded 3-round `StateGraph` built dynamically from persona files
 * **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS v4
@@ -205,7 +205,7 @@ Synthesis is performed exactly once per session by `ibm/granite-3-30b-instruct` 
 │   │   │   ├── state.ts         # DebateState type
 │   │   │   ├── graph.ts         # StateGraph — dynamic node wiring from persona loader
 │   │   │   ├── load-personas.ts # Runtime persona loader (max 6 debaters, turn_order sort)
-│   │   │   ├── synthesis.ts     # One-shot synthesis via granite-3-30b-instruct
+│   │   │   ├── synthesis.ts     # One-shot synthesis via meta-llama/llama-3-3-70b-instruct
 │   │   │   └── agents/          # Individual agent node implementations
 │   │   ├── mermaid/
 │   │   │   ├── generate.ts      # Mermaid generation with mermaid.parse() validation + retry

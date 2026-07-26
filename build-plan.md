@@ -62,7 +62,7 @@ The plan follows TASKS.md session protocol exactly: one task at a time, mark In 
 
 ### Sub-Task 1.1 — Create persona files for all four agents
 - **Status:** `[ ] pending`
-- **Intent:** Give each debate agent (SA, SRE, FinOps, Security) a structured persona file under `/personas/agents/` that the debate engine loads at runtime.
+- **Intent:** Give each debate agent (SA, SRE, FinOps, Security) a structured persona file under `backend/personas/agents/` that the debate engine loads at runtime.
 - **Expected Outcomes:**
   - Four files exist: `personas/agents/sa.md`, `sre.md`, `finops.md`, `security.md`.
   - Each is ≤ 40 lines, follows the gitops-persona-skill template from `.bob/skills/gitops-persona-skill.md`.
@@ -71,7 +71,7 @@ The plan follows TASKS.md session protocol exactly: one task at a time, mark In 
   1. Create `personas/agents/sa.md` — Solutions Architect persona (role, expertise, debate style, model: `ibm/granite-4-h-small`).
   2. Create `personas/agents/sre.md` — Site Reliability Engineer persona (reliability, latency, SLO focus; must include objection format).
   3. Create `personas/agents/finops.md` — FinOps persona (cost optimization, unit economics, TCO; must include objection format).
-  4. Create `personas/agents/security.md` — Security persona (BYOC criteria loader, thinking mode, references `/personas/compliance/*.md`; model: `ibm/granite-guardian-3-8b`).
+  4. Create `backend/personas/agents/security.md` — Security persona (BYOC criteria loader, thinking mode, references `backend/personas/compliance/*.md`; model: `ibm/granite-guardian-3-8b`).
   5. Commit each file individually via simple-git (one concern per commit per gitops-persona-skill guardrail).
   6. Update `TASKS.md` 1.1 → Done.
 - **Relevant Context:**
@@ -271,15 +271,15 @@ The plan follows TASKS.md session protocol exactly: one task at a time, mark In 
 ### Sub-Task 2.7 — Synthesis step
 - **Status:** `[ ] pending`
 - **Intent:** After the debate concludes, produce a single canonical architecture description suitable for diagram + pitch-deck generation.
-- **Expected Outcomes:** `lib/debate/synthesis.ts` — exports `synthesize(state: DebateState): Promise<string>`, calls `ibm/granite-3-30b-instruct` exactly once, flags unresolved objections in output.
+- **Expected Outcomes:** `lib/debate/synthesis.ts` — exports `synthesize(state: DebateState): Promise<string>`, calls `meta-llama/llama-3-3-70b-instruct` exactly once, flags unresolved objections in output.
 - **Todo List:**
   1. Create `lib/debate/synthesis.ts`.
   2. Build a prompt that includes the final `proposal`, full `transcript`, and any `objections` that were never resolved.
-  3. Call `ibm/granite-3-30b-instruct` via `generateText`.
+  3. Call `meta-llama/llama-3-3-70b-instruct` via `generateText`.
   4. If objections remain unresolved, append a `"UNRESOLVED OBJECTIONS: ..."` section.
   5. Return the synthesis string.
   6. Update `TASKS.md` 2.7 → Done.
-- **Relevant Context:** AGENTS.md: "call ONCE per session, never in the debate loop". `ibm/granite-3-30b-instruct`.
+- **Relevant Context:** AGENTS.md: "call ONCE per session, never in the debate loop". `meta-llama/llama-3-3-70b-instruct`.
 
 ---
 
@@ -542,7 +542,7 @@ The plan follows TASKS.md session protocol exactly: one task at a time, mark In 
 - **Intent:** Add model fallbacks, cached-response fallbacks, STT fallback, extend health endpoint, and run end-to-end demo rehearsal.
 - **Todo List:**
   1. 5.1: Wrap every `watsonx-ai-provider` call with a try/catch that retries with the fallback model from AGENTS.md and logs which model was used.
-  2. 5.2: Cache last SA proposal in synthesis step; use as fallback if granite-3-30b-instruct fails.
+  2. 5.2: Cache last SA proposal in synthesis step; use as fallback if meta-llama/llama-3-3-70b-instruct fails.
   3. 5.3: Return `{ transcript: "", transcription_unavailable: true }` if STT call fails.
   4. 5.4: Extend `/api/health/watsonx` to also check STT provider status and `git log` health.
   5. 5.5: Full demo rehearsal (discovery → debate → diagram → pptx → chaos → audio), record errors.

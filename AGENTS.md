@@ -17,7 +17,7 @@
 
 ## Persona schema
 
-Every file in `/personas/agents/*.md` must begin with a YAML frontmatter block.
+Every file in `backend/personas/agents/*.md` must begin with a YAML frontmatter block.
 The markdown body below the frontmatter is the persona's verbatim system prompt.
 
 ```yaml
@@ -35,7 +35,7 @@ compliance_ref: "<glob>"            # guardian only — path glob relative to re
 ```
 
 **Field rules:**
-- `id` must be unique across all files in `/personas/agents/`. The loader rejects duplicates.
+- `id` must be unique across all files in `backend/personas/agents/`. The loader rejects duplicates.
 - `role_type: debater` personas must NOT have a `compliance_ref` field.
 - `role_type: guardian` personas MUST have a `compliance_ref` field pointing to at least one existing file.
 - `model` is required; it may repeat the AGENTS.md default or override it per-persona.
@@ -57,7 +57,7 @@ compliance_ref: "<glob>"            # guardian only — path glob relative to re
   node names. Adding or removing a persona file changes the graph without touching graph.ts.
 
 ## GitOps for AI
-- Persona and compliance mandate files live in /personas/**.md and are Bob Skills (.bob/skills/).
+- Persona and compliance mandate files live in backend/personas/**.md and are Bob Skills (.bob/skills/).
 - Every edit to a persona/mandate file must be a real git commit via simple-git, never a silent overwrite.
 - The persona loader reads frontmatter at runtime; editing a persona file and committing it
   takes effect on the next request without a redeploy.

@@ -8,11 +8,11 @@ runtime by `lib/debate/load-personas.ts`; adding, editing, or disabling a
 persona file takes effect on the next request without a redeploy.
 
 ## When to use
-Any time a persona file in `/personas/agents/*.md` or a compliance mandate
-in `/personas/compliance/*.md` is created or edited.
+Any time a persona file in `backend/personas/agents/*.md` or a compliance mandate
+in `backend/personas/compliance/*.md` is created or edited.
 
 ## Persona file structure
-Every `/personas/agents/*.md` file must begin with a YAML frontmatter block
+Every `backend/personas/agents/*.md` file must begin with a YAML frontmatter block
 (see AGENTS.md §Persona schema for the full field reference), followed by the
 persona's system prompt as the markdown body:
 
@@ -25,7 +25,7 @@ model: ibm/granite-4-h-small
 enabled: true
 turn_order: 3
 accent_color: "#6ab04c"   # optional
-# compliance_ref: "personas/compliance/*.md"  # guardian only
+# compliance_ref: "backend/personas/compliance/*.md"  # guardian only
 ---
 
 You are a ... (system prompt begins here)
