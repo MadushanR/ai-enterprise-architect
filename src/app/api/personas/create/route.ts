@@ -20,6 +20,8 @@ export interface PersonaCreatePayload {
   turn_order: number;
   accent_color?: string; // optional hex
   compliance_ref?: string; // guardian only
+  /** When true, this persona runs after synthesis instead of during debate rounds. */
+  runs_after_synthesis?: boolean;
   system_prompt: string; // markdown body (the persona's system prompt)
 }
 
@@ -35,6 +37,7 @@ function buildPersonaFile(p: PersonaCreatePayload): string {
   if (p.role_type === "guardian" && p.compliance_ref) {
     lines.push(`compliance_ref: "${p.compliance_ref}"`);
   }
+  if (p.runs_after_synthesis) lines.push(`runs_after_synthesis: true`);
   lines.push("---");
   lines.push("");
   lines.push(p.system_prompt.trim());
@@ -92,6 +95,7 @@ export async function POST(request: Request): Promise<Response> {
     turn_order: body.turn_order ?? (existing.length + 1),
     accent_color: body.accent_color,
     compliance_ref: body.compliance_ref,
+    runs_after_synthesis: body.runs_after_synthesis ?? false,
     system_prompt: body.system_prompt!,
   };
 

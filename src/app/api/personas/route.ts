@@ -18,6 +18,7 @@ export async function GET(): Promise<Response> {
     enabled: p.enabled,
     turn_order: p.turn_order,
     accent_color: p.accent_color ?? null,
+    runs_after_synthesis: p.runs_after_synthesis ?? false,
   }));
 
   return NextResponse.json(safe);

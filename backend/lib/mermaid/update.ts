@@ -133,11 +133,27 @@ export async function updateDiagramFromTranscript(
   }
 
   // Strip any accidental graph TD header or fences the model emitted
-  const cleanPatch = rawPatch
+  let cleanPatch = rawPatch
     .replace(/^```(?:mermaid)?\s*/im, "")
     .replace(/\s*```$/m, "")
     .replace(/^graph\s+TD\s*/im, "")
     .trim();
+
+  // Fix anonymous edge targets and problematic label chars in the patch lines
+  cleanPatch = cleanPatch
+    .split("\n")
+    .map((line, _i, _arr, _counter = { n: 0 }) => {
+      let fixed = line;
+      fixed = fixed.replace(
+        /(-->|==>|-\.-?>|---)\s*(\["[^"]*"\])/g,
+        (_, arrow: string, label: string) => `${arrow} GEN${Math.random().toString(36).slice(2, 6)}${label}`
+      );
+      fixed = fixed.replace(/\["([^"]*)"\]/g, (_, inner: string) =>
+        `["${inner.replace(/[()]/g, " ").replace(/\//g, " ").replace(/\+/g, " and ").replace(/\|/g, " or ").replace(/\s{2,}/g, " ").trim()}"]`
+      );
+      return fixed;
+    })
+    .join("\n");
 
   // Append patch lines to the existing diagram
   const updatedDiagram = `${currentDiagram.trimEnd()}\n${cleanPatch}`;

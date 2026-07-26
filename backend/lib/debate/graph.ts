@@ -25,8 +25,10 @@ const AUTO_MAX_ROUNDS = 10;
 async function makeRoundNode(
   personas: Awaited<ReturnType<typeof loadPersonas>>
 ): Promise<(state: DebateState) => Promise<DebateUpdate>> {
-  const debaters = personas.filter((p) => p.role_type === "debater");
-  const guardians = personas.filter((p) => p.role_type === "guardian");
+  // Post-synthesis personas are excluded from debate rounds entirely.
+  const roundPersonas = personas.filter((p) => !p.runs_after_synthesis);
+  const debaters = roundPersonas.filter((p) => p.role_type === "debater");
+  const guardians = roundPersonas.filter((p) => p.role_type === "guardian");
 
   // Proposer = first debater by turn_order (lowest).
   // Builder   = last debater by turn_order (highest) when id === "builder".
@@ -121,32 +123,18 @@ export interface DebateGraphOptions {
   maxRounds?: number;
 }
 
-/**
- * Builds and compiles the debate graph for the given personas.
- * Called once per debate session from the API route.
- */
-export async function buildDebateGraph(options: DebateGraphOptions = {}) {
-  const allPersonas = await loadPersonas();
+export interface DebateGraphResult {
+  graph: ReturnType<typeof buildCompiledGraph>;
+  /** Personas flagged with runs_after_synthesis:true — the debate route runs them after synthesis. */
+  postSynthesisPersonas: Awaited<ReturnType<typeof loadPersonas>>;
+}
 
-  // Apply agent filter if provided
-  const personas =
-    options.agentFilter && options.agentFilter.length > 0
-      ? allPersonas.filter((p) => options.agentFilter!.includes(p.id))
-      : allPersonas;
-
-  if (personas.filter((p) => p.role_type === "debater").length === 0) {
-    throw new Error(
-      "[debate/graph] No enabled debater personas found in /personas/agents/. " +
-        "At least one persona with role_type: debater must be enabled."
-    );
-  }
-
-  const autoMode = options.maxRounds === 0;
-  const maxRounds = autoMode
-    ? AUTO_MAX_ROUNDS
-    : Math.max(1, options.maxRounds ?? DEFAULT_MAX_ROUNDS);
-  const roundNode = await makeRoundNode(personas);
-
+/** Internal helper that returns the compiled graph (avoids repeating the type). */
+function buildCompiledGraph(
+  roundNode: (state: DebateState) => Promise<DebateUpdate>,
+  maxRounds: number,
+  autoMode: boolean
+) {
   async function incrementRound(state: DebateState): Promise<DebateUpdate> {
     return { round: state.round + 1 };
   }
@@ -179,4 +167,41 @@ export async function buildDebateGraph(options: DebateGraphOptions = {}) {
     })
     .addEdge("tick", "conduct")
     .compile();
+}
+
+/**
+ * Builds and compiles the debate graph for the given personas.
+ * Called once per debate session from the API route.
+ * Returns both the compiled graph and any post-synthesis personas.
+ */
+export async function buildDebateGraph(options: DebateGraphOptions = {}): Promise<DebateGraphResult> {
+  const allPersonas = await loadPersonas();
+
+  // Apply agent filter if provided
+  const personas =
+    options.agentFilter && options.agentFilter.length > 0
+      ? allPersonas.filter((p) => options.agentFilter!.includes(p.id))
+      : allPersonas;
+
+  // Split: round personas participate in debate; post-synthesis run after synthesis
+  const roundPersonas = personas.filter((p) => !p.runs_after_synthesis);
+  const postSynthesisPersonas = personas.filter(
+    (p) => p.runs_after_synthesis && p.role_type === "debater"
+  );
+
+  if (roundPersonas.filter((p) => p.role_type === "debater").length === 0) {
+    throw new Error(
+      "[debate/graph] No enabled debater personas found in /personas/agents/. " +
+        "At least one persona with role_type: debater must be enabled."
+    );
+  }
+
+  const autoMode = options.maxRounds === 0;
+  const maxRounds = autoMode
+    ? AUTO_MAX_ROUNDS
+    : Math.max(1, options.maxRounds ?? DEFAULT_MAX_ROUNDS);
+  const roundNode = await makeRoundNode(roundPersonas);
+  const graph = buildCompiledGraph(roundNode, maxRounds, autoMode);
+
+  return { graph, postSynthesisPersonas };
 }

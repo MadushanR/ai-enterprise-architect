@@ -33,10 +33,13 @@ const SYSTEM_PROMPT = [
   "Rules:",
   "1. Output ONLY the Mermaid code block — no prose, no explanation, no markdown fences.",
   "2. The first line must be exactly `graph TD`.",
-  "3. Each node must have a quoted label: e.g.  A[\"API Gateway\"]",
-  "4. Use descriptive node IDs (no spaces, max 20 chars).",
-  "5. Maximum 20 nodes, maximum 30 edges.",
-  "6. Do NOT use subgraphs, classDef, or click directives.",
+  "3. Every node MUST have an alphanumeric ID followed by a quoted label: e.g.  API[\"API Gateway\"]",
+  "4. Node IDs must be alphanumeric with underscores only — NO spaces, NO hyphens, max 20 chars.",
+  "5. Every edge target MUST be a node ID, never a quoted string: write  A --> B  not  A --> [\"label\"]",
+  "6. Node labels may contain spaces but must NOT contain: parentheses ( ), slashes /, plus signs +, pipe |",
+  "   Replace parentheses with spaces, slashes with spaces, plus with and, pipe with or.",
+  "7. Maximum 20 nodes, maximum 30 edges.",
+  "8. Do NOT use subgraphs, classDef, or click directives.",
 ].join("\n");
 
 function buildPrompt(description: string): string {
@@ -60,6 +63,69 @@ function buildRetryPrompt(description: string, badDiagram: string, parseError: s
   ].join("\n");
 }
 
+// ── Mermaid sanitizer ────────────────────────────────────────────────────────
+
+/**
+ * Post-extraction sanitizer: fixes common LLM output mistakes that cause
+ * Mermaid parse failures in the client renderer.
+ *
+ * Problems fixed:
+ *  1. Anonymous edge targets:  A --> ["label"]  →  A --> GEN_n["label"]
+ *     Mermaid requires a node ID before the bracket; a bare ["…"] is a syntax error.
+ *  2. Problematic characters inside node labels ( ) / + | that trip Mermaid's lexer.
+ *     These are replaced with safe equivalents inside quoted label strings.
+ */
+function sanitizeDiagram(diagram: string): string {
+  const lines = diagram.split("\n");
+  const sanitized: string[] = [];
+  let anonCounter = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip blank lines, header, and directive lines untouched
+    if (
+      trimmed === "" ||
+      /^graph\s+(TD|LR|RL|BT|TB)/i.test(trimmed) ||
+      /^%%/.test(trimmed) ||
+      /^(subgraph|end|style|classDef|class|linkStyle)\b/i.test(trimmed)
+    ) {
+      sanitized.push(line);
+      continue;
+    }
+
+    let fixed = line;
+
+    // Fix 1: anonymous edge targets — `... --> ["label"]` or `-. text .-> ["label"]`
+    // Replace each occurrence of an arrow followed immediately by ["label"] (no node ID).
+    // We match any arrow pattern then `["..."]` with no preceding word char.
+    fixed = fixed.replace(
+      /(-->|==>|-\.-?>|---)\s*(\["[^"]*"\])/g,
+      (_, arrow, label) => {
+        const id = `GEN${anonCounter++}`;
+        return `${arrow} ${id}${label}`;
+      }
+    );
+
+    // Fix 2: sanitize characters inside quoted labels that break Mermaid's lexer.
+    // We target content between `["` and `"]` — replace ( ) / + | with safe chars.
+    fixed = fixed.replace(/\["([^"]*)"\]/g, (_, inner: string) => {
+      const clean = inner
+        .replace(/[()]/g, " ")   // parentheses → space
+        .replace(/\//g, " ")     // slash → space
+        .replace(/\+/g, " and ") // plus → " and "
+        .replace(/\|/g, " or ")  // pipe → " or "
+        .replace(/\s{2,}/g, " ") // collapse multiple spaces
+        .trim();
+      return `["${clean}"]`;
+    });
+
+    sanitized.push(fixed);
+  }
+
+  return sanitized.join("\n");
+}
+
 // ── Mermaid extraction ────────────────────────────────────────────────────────
 
 /**
@@ -71,6 +137,7 @@ function extractMermaid(raw: string): string {
   // 1. Pull content out of ```mermaid or ``` fences
   const fenced = raw.match(/```(?:mermaid)?\s*\n?([\s\S]*?)```/);
   const candidate = fenced ? fenced[1].trim() : raw.trim();
+  // (sanitizeDiagram is applied after the clean lines are joined, see below)
 
   // 2. Find where the graph block starts
   const graphStart = candidate.search(/^graph\s+(TD|LR|RL|BT|TB)\b/im);
@@ -89,7 +156,7 @@ function extractMermaid(raw: string): string {
     clean.push(line);
   }
 
-  return clean.join("\n").trim();
+  return sanitizeDiagram(clean.join("\n").trim());
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────

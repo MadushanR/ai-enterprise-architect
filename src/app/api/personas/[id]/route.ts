@@ -34,9 +34,9 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json().catch(() => null);
 
-  if (!body || typeof body.enabled !== "boolean") {
+  if (!body || (typeof body.enabled !== "boolean" && typeof body.runs_after_synthesis !== "boolean")) {
     return NextResponse.json(
-      { error: "Body must include `enabled` (boolean)." },
+      { error: "Body must include `enabled` (boolean) or `runs_after_synthesis` (boolean)." },
       { status: 400 }
     );
   }
@@ -54,14 +54,29 @@ export async function PATCH(
     return NextResponse.json({ error: `Persona "${id}" not found.` }, { status: 404 });
   }
 
-  const updated = setFrontmatterField(raw, "enabled", String(body.enabled));
+  let updated = raw;
+  const changes: string[] = [];
 
-  const action = body.enabled ? "enable" : "disable";
+  if (typeof body.enabled === "boolean") {
+    updated = setFrontmatterField(updated, "enabled", String(body.enabled));
+    changes.push(body.enabled ? "enable" : "disable");
+  }
+
+  if (typeof body.runs_after_synthesis === "boolean") {
+    if (body.runs_after_synthesis) {
+      updated = setFrontmatterField(updated, "runs_after_synthesis", "true");
+    } else {
+      // Remove the line entirely when false (keep frontmatter clean)
+      updated = updated.replace(/^runs_after_synthesis:\s*.*\r?\n/m, "");
+    }
+    changes.push(`runs_after_synthesis=${body.runs_after_synthesis}`);
+  }
+
   await commitFile(
     filePath,
     updated,
-    `feat(personas): ${action} persona "${id}" via admin UI`
+    `feat(personas): ${changes.join(", ")} persona "${id}" via admin UI`
   );
 
-  return NextResponse.json({ id, enabled: body.enabled });
+  return NextResponse.json({ id, enabled: body.enabled, runs_after_synthesis: body.runs_after_synthesis });
 }

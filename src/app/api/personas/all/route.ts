@@ -43,6 +43,8 @@ export interface AdminPersona {
   turn_order: number;
   accent_color: string | null;
   compliance_ref: string | null;
+  /** When true, this persona runs after synthesis instead of during debate rounds. */
+  runs_after_synthesis: boolean;
   system_prompt: string;
   /** Filename only (e.g. "sa.md") — used to build PATCH URLs. */
   filename: string;
@@ -69,6 +71,7 @@ export async function GET(): Promise<Response> {
           turn_order: 99,
           accent_color: null,
           compliance_ref: null,
+          runs_after_synthesis: false,
           system_prompt: raw,
           filename,
           parse_error: true,
@@ -85,6 +88,7 @@ export async function GET(): Promise<Response> {
         turn_order: Number(m.turn_order ?? 99),
         accent_color: m.accent_color ? String(m.accent_color) : null,
         compliance_ref: m.compliance_ref ? String(m.compliance_ref) : null,
+        runs_after_synthesis: m.runs_after_synthesis === true,
         system_prompt: parsed.body,
         filename,
         parse_error: false,

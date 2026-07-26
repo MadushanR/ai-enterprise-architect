@@ -32,6 +32,8 @@ interface WarRoomFeedProps {
   maxRounds?: number;
   /** IDs of personas with role_type:guardian — used to show YES/NO verdict UI. */
   guardianIds?: string[];
+  /** If set, only turns from this agent are shown (synthesis always shown). */
+  filterAgent?: string;
   /** Called each time a round index is known. */
   onRoundChange?: (round: number) => void;
   /** Called when synthesis text arrives. */
@@ -57,6 +59,7 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
     agents,
     maxRounds,
     guardianIds = [],
+    filterAgent,
     onRoundChange,
     onSynthesis,
     onComplete,
@@ -247,10 +250,23 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
     );
   }
 
+  const visibleTurns = filterAgent && filterAgent !== "all"
+    ? turns.filter((t) => t.agent === filterAgent)
+    : turns;
+
+  // Build a stable agent-order map: first time an agent appears gets an index.
+  // Even index → left, odd index → right — gives the alternating chat layout.
+  const agentSideMap = new Map<string, "left" | "right">();
+  for (const t of turns) {
+    if (!agentSideMap.has(t.agent)) {
+      agentSideMap.set(t.agent, agentSideMap.size % 2 === 0 ? "left" : "right");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* Agent turn cards */}
-      {turns.map((t, i) => (
+      {visibleTurns.map((t, i) => (
         <AgentTurnCard
           key={`${t.agent}-${t.round}-${i}`}
           agent={t.agent}
@@ -259,11 +275,12 @@ const WarRoomFeed = forwardRef<WarRoomFeedHandle, WarRoomFeedProps>(function War
           status={running && i === turns.length - 1 ? "streaming" : t.status}
           objections={t.objections}
           isGuardian={guardianIds.includes(t.agent)}
+          align={agentSideMap.get(t.agent) ?? "left"}
         />
       ))}
 
       {/* Loading state when debate is running and no turns yet */}
-      {running && turns.length === 0 && (
+      {running && visibleTurns.length === 0 && (
         <div
           className="text-sm animate-pulse"
           style={{ fontFamily: "var(--font-geist-mono)", color: "var(--col-cobalt)" }}

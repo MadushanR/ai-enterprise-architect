@@ -20,6 +20,7 @@ import type { CreativeBrief } from "@/src/app/api/discovery/route";
 import type { DiagramResult } from "@/backend/lib/mermaid/generate";
 import type { Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 import { useChaosStore } from "@/src/store/chaosStore";
+import ThemeToggle from "@/src/components/ThemeToggle";
 
 // ── Types ──────────────────────────────────────────────────────
 type AppPhase = "idle" | "discovering" | "ready" | "debating" | "synthesised";
@@ -68,7 +69,7 @@ interface HealthState {
 // ── Component ──────────────────────────────────────────────────
 export default function Home() {
   const router = useRouter();
-  const { setInputs: setChaosInputs } = useChaosStore();
+  const { setInputs: setChaosInputs, setReturnSnapshot, clearReturnSnapshot, returnSnapshot } = useChaosStore();
   const [idea, setIdea] = useState("");
   const [brief, setBrief] = useState<CreativeBrief | null>(null);
   const [editableBrief, setEditableBrief] = useState<CreativeBrief | null>(null);
@@ -97,6 +98,8 @@ export default function Home() {
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [maxRounds, setMaxRounds] = useState(3);
+  // Persona filter for the War Room feed — "all" shows every turn
+  const [personaFilter, setPersonaFilter] = useState<string>("all");
   // Resizable left pane — clamped between 180 and 520 px
   const [leftWidth, setLeftWidth] = useState(280);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -299,6 +302,27 @@ export default function Home() {
     setSavedSessions(loadSessionsFromStorage());
   }, []);
 
+  // ── Rehydrate state after returning from /chaos ──────────────
+  useEffect(() => {
+    if (!returnSnapshot) return;
+    setIdea(returnSnapshot.idea);
+    setBrief(returnSnapshot.brief);
+    setEditableBrief(returnSnapshot.brief);
+    setBriefEditing(false);
+    setTranscript(returnSnapshot.transcript);
+    setObjections(returnSnapshot.objections);
+    setSynthesis(returnSnapshot.synthesis);
+    setDiagram(returnSnapshot.diagram);
+    setFinalProposal(returnSnapshot.finalProposal);
+    setDebateComplete(returnSnapshot.debateComplete);
+    setDebateProposal(null);
+    setRound(-1);
+    setPhase("synthesised");
+    setError(null);
+    clearReturnSnapshot();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function handleSaveSession() {
     if (!brief || !synthesis) return;
     const entry: SavedSession = {
@@ -410,7 +434,17 @@ export default function Home() {
   }, [diagramExpanded]);
 
   function handleSimulateChaos() {
-    if (!synthesis || !diagram?.valid) return;
+    if (!synthesis || !diagram?.valid || !brief) return;
+    setReturnSnapshot({
+      idea,
+      brief,
+      transcript,
+      objections,
+      synthesis,
+      diagram,
+      finalProposal,
+      debateComplete,
+    });
     setChaosInputs(synthesis, diagram.diagram);
     router.push("/chaos");
   }
@@ -476,6 +510,7 @@ export default function Home() {
           >
             ⚙ Personas
           </a>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -1122,6 +1157,47 @@ export default function Home() {
           aria-label="War Room debate feed"
         >
           <div className="flex flex-col flex-1 p-6">
+            {/* ── Persona filter bar — always sticky at top of conversation ── */}
+            {personas.length > 0 && (
+              <div
+                className="flex items-center justify-end mb-4"
+                style={{ gap: "8px" }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--font-geist-mono)",
+                    fontSize: "0.6875rem",
+                    color: "var(--col-muted)",
+                  }}
+                >
+                  View:
+                </span>
+                <select
+                  value={personaFilter}
+                  onChange={(e) => setPersonaFilter(e.target.value)}
+                  aria-label="Filter War Room feed by persona"
+                  style={{
+                    fontFamily: "var(--font-geist-mono)",
+                    fontSize: "0.6875rem",
+                    padding: "3px 8px",
+                    backgroundColor: "var(--col-surface)",
+                    color: personaFilter !== "all" ? "var(--col-cobalt)" : "var(--col-ink)",
+                    border: `1px solid ${personaFilter !== "all" ? "var(--col-cobalt)" : "var(--col-rule)"}`,
+                    borderRadius: "3px",
+                    cursor: "pointer",
+                    outline: "none",
+                  }}
+                >
+                  <option value="all">All personas</option>
+                  {personas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {phase === "discovering" && (
               <div className="flex flex-col items-center justify-center h-full gap-3">
                 <span
@@ -1139,6 +1215,7 @@ export default function Home() {
               agents={selectedAgents.length > 0 ? selectedAgents : undefined}
               maxRounds={maxRounds}
               guardianIds={guardianIds}
+              filterAgent={personaFilter}
               onRoundChange={handleRoundChange}
               onSynthesis={handleSynthesis}
               onComplete={handleDebateComplete}
