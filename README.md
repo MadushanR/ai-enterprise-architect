@@ -252,6 +252,8 @@ Synthesis is performed exactly once per session by `meta-llama/llama-3-3-70b-ins
    WATSONX_AI_APIKEY=<your key>
    WATSONX_AI_PROJECT_ID=<your project id>
    WATSONX_AI_REGION=us-south
+   WATSON_STT_APIKEY=<your key>
+   WATSON_STT_URL=<your endpoint>
    ```
 3. **Run** `npm run dev` and open [http://localhost:3000](http://localhost:3000).
 4. **Verify** the watsonx connection at `/api/health/watsonx` before running a full debate.

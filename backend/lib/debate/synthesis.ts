@@ -7,6 +7,7 @@
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
 import type { DebateState } from "@/backend/lib/debate/state";
+import { withRetry } from "@/backend/lib/with-retry";
 
 const wx = createWatsonx();
 
@@ -49,11 +50,10 @@ export async function synthesize(state: DebateState): Promise<string> {
   // Fallback: if synthesis model fails, use the last SA proposal directly
   let text: string;
   try {
-    const result = await generateText({
-      model: wx(MODEL_SYNTHESIS),
-      prompt,
-      maxOutputTokens: 1024,
-    });
+    const result = await withRetry(
+      () => generateText({ model: wx(MODEL_SYNTHESIS), prompt, maxOutputTokens: 1024 }),
+      MODEL_SYNTHESIS
+    );
     text = result.text;
     console.log(`[SYNTHESIS] model=${MODEL_SYNTHESIS} chars=${text.length}`);
   } catch (err) {

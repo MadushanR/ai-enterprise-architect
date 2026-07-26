@@ -14,6 +14,7 @@
  */
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 
 const wx = createWatsonx();
 
@@ -101,21 +102,17 @@ function validateBeats(raw: unknown): ChaosBeat[] {
 
 async function callModel(prompt: string): Promise<string> {
   try {
-    const { text } = await generateText({
-      model: wx(MODEL),
-      system: SYSTEM_PROMPT,
-      prompt,
-      maxOutputTokens: 512,
-    });
+    const { text } = await withRetry(
+      () => generateText({ model: wx(MODEL), system: SYSTEM_PROMPT, prompt, maxOutputTokens: 512 }),
+      MODEL
+    );
     return text;
   } catch {
     console.warn(`[chaos/narrative] ${MODEL} failed — falling back to ${FALLBACK_MODEL}`);
-    const { text } = await generateText({
-      model: wx(FALLBACK_MODEL),
-      system: SYSTEM_PROMPT,
-      prompt,
-      maxOutputTokens: 512,
-    });
+    const { text } = await withRetry(
+      () => generateText({ model: wx(FALLBACK_MODEL), system: SYSTEM_PROMPT, prompt, maxOutputTokens: 512 }),
+      FALLBACK_MODEL
+    );
     return text;
   }
 }

@@ -14,6 +14,7 @@
  */
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 
 const wx = createWatsonx();
 
@@ -48,21 +49,17 @@ function buildPrompt(transcript: string, currentDiagram: string): string {
 
 async function callModel(prompt: string): Promise<string> {
   try {
-    const { text } = await generateText({
-      model: wx(MODEL),
-      system: SYSTEM_PROMPT,
-      prompt,
-      maxOutputTokens: 256,
-    });
+    const { text } = await withRetry(
+      () => generateText({ model: wx(MODEL), system: SYSTEM_PROMPT, prompt, maxOutputTokens: 256 }),
+      MODEL
+    );
     return text.trim();
   } catch {
     console.warn(`[mermaid/update] ${MODEL} failed — falling back to ${FALLBACK_MODEL}`);
-    const { text } = await generateText({
-      model: wx(FALLBACK_MODEL),
-      system: SYSTEM_PROMPT,
-      prompt,
-      maxOutputTokens: 256,
-    });
+    const { text } = await withRetry(
+      () => generateText({ model: wx(FALLBACK_MODEL), system: SYSTEM_PROMPT, prompt, maxOutputTokens: 256 }),
+      FALLBACK_MODEL
+    );
     return text.trim();
   }
 }

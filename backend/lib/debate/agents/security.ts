@@ -8,6 +8,7 @@ import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { generateText } from "ai";
 import { createWatsonx } from "watsonx-ai-provider";
+import { withRetry } from "@/backend/lib/with-retry";
 import type { DebateState, DebateUpdate, Objection, TranscriptEntry } from "@/backend/lib/debate/state";
 
 const wx = createWatsonx();
@@ -49,27 +50,28 @@ export async function securityNode(state: DebateState): Promise<DebateUpdate> {
   let fullText = "";
   let modelUsed = MODEL_PRIMARY;
 
+  const evalPrompt = `Round ${state.round + 1}. Evaluate this architecture proposal against all loaded compliance mandates:\n\n${state.proposal}`;
+
   try {
     // granite-guardian-3-8b: use reasoningEffort for thinking mode
-    const result = await generateText({
-      model: wx(MODEL_PRIMARY),
-      system: systemPrompt,
-      prompt: `Round ${state.round + 1}. Evaluate this architecture proposal against all loaded compliance mandates:\n\n${state.proposal}`,
-      maxOutputTokens: 1024,
-      providerOptions: {
-        watsonx: { reasoningEffort: "high" },
-      },
-    });
+    const result = await withRetry(
+      () => generateText({
+        model: wx(MODEL_PRIMARY),
+        system: systemPrompt,
+        prompt: evalPrompt,
+        maxOutputTokens: 1024,
+        providerOptions: { watsonx: { reasoningEffort: "high" } },
+      }),
+      MODEL_PRIMARY
+    );
     fullText = result.text;
   } catch {
     // Fallback: use llama without thinking mode
     modelUsed = MODEL_FALLBACK;
-    const result = await generateText({
-      model: wx(MODEL_FALLBACK),
-      system: systemPrompt,
-      prompt: `Round ${state.round + 1}. Evaluate this architecture proposal against all loaded compliance mandates:\n\n${state.proposal}`,
-      maxOutputTokens: 1024,
-    });
+    const result = await withRetry(
+      () => generateText({ model: wx(MODEL_FALLBACK), system: systemPrompt, prompt: evalPrompt, maxOutputTokens: 1024 }),
+      MODEL_FALLBACK
+    );
     fullText = result.text;
   }
 

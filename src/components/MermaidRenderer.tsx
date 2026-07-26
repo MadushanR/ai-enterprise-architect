@@ -2,34 +2,31 @@
 
 /**
  * components/MermaidRenderer.tsx
- * TASKS.md 3.2 (updated for 4.4): Client-side Mermaid diagram renderer.
+ * TASKS.md 3.2 (updated for 4.4 + live chaos animations): Client-side Mermaid diagram renderer.
  *
- * Phase 3: renders a diagram string via mermaid.render(), shows parse-error
- * state gracefully (never blank-screens).
- *
- * Phase 4 addition: exposes an imperative `applyClassDefs(nodeStyles)` handle
- * via forwardRef/useImperativeHandle. The chaos simulator uses this to recolor
- * individual SVG nodes by mutating inline styles directly — bypassing
- * mermaid.render() entirely so node positions never jump.
- *
- * The SVG node-ID-to-element mapping relies on the ids Mermaid assigns:
- *   - flowchart nodes: the SVG <g> element's data-id attribute or the id
- *     attribute of the child <rect>/<circle>. Mermaid uses the pattern
- *     `flowchart-<nodeId>-<n>` on the wrapping <g> and sets data-node-id.
- *     We search by `data-node-id` first, then fall back to a text-content scan.
+ * Phase 4 addition: exposes an imperative handle via forwardRef/useImperativeHandle:
+ *   - applyClassDefs(nodeStyles)  — recolour SVG nodes without re-rendering
+ *   - animateNodes(nodeIds, state) — trigger per-state CSS animation on affected nodes
+ *   - getSvgContainer()            — return the underlying div so callers can measure node positions
+ *   - isRendered()                 — true once SVG has been injected
  */
 
 import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import type { NodeStyle } from "@/backend/lib/chaos/classDef";
+import type { ChaosState } from "@/backend/lib/chaos/narrative";
 
 // ── Public handle type ────────────────────────────────────────────────────────
 
 export interface MermaidRendererHandle {
-  /**
-   * Apply per-node style overrides directly to the rendered SVG.
-   * Called by the chaos panel on each beat — never re-renders the diagram.
-   */
+  /** Apply per-node style overrides directly to the rendered SVG. */
   applyClassDefs(nodeStyles: NodeStyle[]): void;
+  /**
+   * Trigger a per-state CSS animation on the given node groups.
+   * Classes are auto-removed after the animation completes.
+   */
+  animateNodes(nodeIds: string[], state: ChaosState): void;
+  /** Return the container div holding the SVG (for position measurement). */
+  getSvgContainer(): HTMLDivElement | null;
   /** True once the SVG has been successfully rendered. */
   isRendered(): boolean;
 }
@@ -43,60 +40,101 @@ interface MermaidRendererProps {
   valid?: boolean;
   /** Optional: upstream parse error message to display in error state. */
   parseError?: string;
+  /** Called once after the SVG has been successfully injected into the DOM. */
+  onRendered?: () => void;
 }
+
+// ── Animation class map ───────────────────────────────────────────────────────
+
+const STATE_ANIM_CLASS: Record<ChaosState, string> = {
+  normal:   "chaos-node-normal",
+  strain:   "chaos-node-strain",
+  failure:  "chaos-node-failure",
+  failover: "chaos-node-failover",
+  recovery: "chaos-node-recovery",
+};
+
+// Duration (ms) that the animation class stays on the element before removal.
+// Must be >= the CSS animation duration for each state.
+const STATE_ANIM_DURATION: Record<ChaosState, number> = {
+  normal:   450,
+  strain:   2300,
+  failure:  600,
+  failover: 600,
+  recovery: 750,
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const MermaidRenderer = forwardRef<MermaidRendererHandle, MermaidRendererProps>(
-  function MermaidRenderer({ diagram, valid = true, parseError }, ref) {
+  function MermaidRenderer({ diagram, valid = true, parseError, onRendered }, ref) {
     const id = useId().replace(/:/g, "m");       // mermaid ids must not contain ":"
     const containerRef = useRef<HTMLDivElement>(null);
     const [renderError, setRenderError] = useState<string | null>(null);
     const [rendered, setRendered] = useState(false);
 
+    // ── Helper: collect all SVG group elements for a given nodeId ──────────
+    function getNodeGroups(svg: HTMLDivElement, nodeId: string): SVGElement[] {
+      const byDataAttr = Array.from(svg.querySelectorAll<SVGElement>(
+        `[data-node-id="${nodeId}"], [data-id="${nodeId}"]`
+      ));
+      const byIdPrefix = Array.from(svg.querySelectorAll<SVGElement>(
+        `[id^="flowchart-${nodeId}-"]`
+      ));
+
+      const targets: SVGElement[] = [...byDataAttr, ...byIdPrefix];
+
+      if (targets.length === 0) {
+        svg.querySelectorAll<SVGElement>("g.node").forEach((g) => {
+          if (g.querySelector(".label")?.textContent?.includes(nodeId)) {
+            targets.push(g);
+          }
+        });
+      }
+      return targets;
+    }
+
     // ── Imperative handle ───────────────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       isRendered: () => rendered,
+
+      getSvgContainer: () => containerRef.current,
 
       applyClassDefs(nodeStyles: NodeStyle[]) {
         const svg = containerRef.current;
         if (!svg) return;
 
         for (const { nodeId, fill, stroke, color } of nodeStyles) {
-          // Mermaid flowchart: wrapping <g> elements carry data-node-id or
-          // an id of the form "flowchart-<nodeId>-<n>". Try both selectors.
-          const byDataAttr = svg.querySelectorAll<SVGElement>(
-            `[data-node-id="${nodeId}"], [data-id="${nodeId}"]`
-          );
-          // Fallback: id-prefix match (Mermaid appends a counter)
-          const byIdPrefix = svg.querySelectorAll<SVGElement>(
-            `[id^="flowchart-${nodeId}-"]`
-          );
-
-          const targets: SVGElement[] = [
-            ...Array.from(byDataAttr),
-            ...Array.from(byIdPrefix),
-          ];
-
-          if (targets.length === 0) {
-            // Last resort: find the <g> whose text content matches the nodeId
-            svg.querySelectorAll<SVGElement>("g.node").forEach((g) => {
-              if (g.querySelector(".label")?.textContent?.includes(nodeId)) {
-                targets.push(g);
-              }
-            });
-          }
+          const targets = getNodeGroups(svg, nodeId);
 
           for (const group of targets) {
-            // Apply to any <rect>, <circle>, <polygon> inside the group
             group.querySelectorAll<SVGElement>("rect, circle, polygon, ellipse").forEach((shape) => {
               shape.style.fill = fill;
               shape.style.stroke = stroke;
             });
-            // Apply text color
             group.querySelectorAll<SVGElement>("text, .label").forEach((t) => {
               (t as SVGElement).style.fill = color;
             });
+          }
+        }
+      },
+
+      animateNodes(nodeIds: string[], state: ChaosState) {
+        const svg = containerRef.current;
+        if (!svg) return;
+
+        const animClass = STATE_ANIM_CLASS[state];
+        const duration  = STATE_ANIM_DURATION[state];
+
+        for (const nodeId of nodeIds) {
+          const targets = getNodeGroups(svg, nodeId);
+          for (const group of targets) {
+            // Remove any previous animation class first to allow re-triggering
+            group.classList.remove(...Object.values(STATE_ANIM_CLASS));
+            // Force reflow so the browser re-triggers the animation
+            void (group as unknown as HTMLElement).offsetWidth;
+            group.classList.add(animClass);
+            setTimeout(() => group.classList.remove(animClass), duration + 50);
           }
         }
       },
@@ -136,6 +174,7 @@ const MermaidRenderer = forwardRef<MermaidRendererHandle, MermaidRendererProps>(
           if (!cancelled && containerRef.current) {
             containerRef.current.innerHTML = svg;
             setRendered(true);
+            onRendered?.();
           }
         } catch (err) {
           if (!cancelled) {

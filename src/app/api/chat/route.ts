@@ -89,7 +89,7 @@ export async function POST(request: Request): Promise<Response> {
           ...history.map((h) => ({ role: h.role, content: h.content }) as const),
           { role: "user" as const, content: message },
         ];
-        const result = await streamText({ model: wx(model), system: systemPrompt, messages, maxOutputTokens: 1024 });
+        const result = streamText({ model: wx(model), system: systemPrompt, messages, maxOutputTokens: 1024 });
         for await (const chunk of result.textStream) {
           send({ type: "chunk", text: chunk });
         }
