@@ -61,15 +61,15 @@ graph TD
     end
 
     subgraph AI_Engine ["AI Models (watsonx.ai + Vercel AI SDK)"]
-        Granite4["ibm/granite-4-h-small<br/>(Debaters: SA, SRE, FinOps & Diagram Gen)"]:::ai
+        Granite4["ibm/granite-4-h-small<br/>(Debaters: SA, SRE, FinOps and Diagram Gen)"]:::ai
         Guardian["ibm/granite-guardian-3-8b<br/>(Security Guardian)"]:::ai
-        Llama3["meta-llama/llama-3-3-70b-instruct<br/>(One-Shot Synthesis & Diagram Fallback)"]:::ai
+        Llama3["meta-llama/llama-3-3-70b-instruct<br/>(One-Shot Synthesis and Diagram Fallback)"]:::ai
         Speech["granite-speech-4.1-2b / Watson STT<br/>(Audio to Text)"]:::ai
     end
 
     subgraph GitOps ["GitOps (PromptOps)"]
         SimpleGit["simple-git<br/>(Version Control)"]:::gitops
-        Personas["/backend/personas/*.md<br/>(Agents & Mandates)"]:::gitops
+        Personas["/backend/personas/*.md<br/>(Agents and Mandates)"]:::gitops
     end
 
     %% Connections
@@ -129,7 +129,7 @@ Agent personas, compliance mandates, and guardrails are **version-controlled Mar
 
 ## 🎯 Selected Challenge Theme
 
-**Enterprise AI Governance & Architecture** — This project addresses the challenge of making enterprise architecture decisions faster, more consistent, and auditable by replacing ad-hoc human review chains with a structured, AI-augmented debate process governed through GitOps.
+**July Challenge - Reimagine Creative Industries** — AI only
 
 ## 🤖 How IBM Bob Was Used
 
