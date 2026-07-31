@@ -129,7 +129,7 @@ Agent personas, compliance mandates, and guardrails are **version-controlled Mar
 
 ## 🎯 Selected Challenge Theme
 
-**July Challenge - Reimagine Creative Industries** — AI only
+**July Challenge - Reimagine Creative Industries**
 
 ## 🤖 How IBM Bob Was Used
 
