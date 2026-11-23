@@ -1,8 +1,5 @@
 # The AI Enterprise Architect
 
-> **Built for the IBM AI Builders Challenge**  
-> Transforming enterprise IT architecture from a manual bottleneck into an AI-augmented creative process.
-
 The AI Enterprise Architect is a multimodal AI creative partner that bridges the gap between business imagination and technical execution. Instead of acting as a simple code generator, this platform simulates a real-world Architecture Review Board. It orchestrates a debate among specialized AI personas to design, stress-test, and document enterprise-grade infrastructure.
 
 ---
