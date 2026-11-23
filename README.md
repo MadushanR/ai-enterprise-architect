@@ -1,4 +1,4 @@
-# 🏗️ The AI Enterprise Architect
+# The AI Enterprise Architect
 
 > **Built for the IBM AI Builders Challenge**  
 > Transforming enterprise IT architecture from a manual bottleneck into an AI-augmented creative process.
@@ -7,7 +7,7 @@ The AI Enterprise Architect is a multimodal AI creative partner that bridges the
 
 ---
 
-## 🔍 Problem Statement
+## Problem Statement
 
 Enterprise IT architecture decisions are high-stakes, slow, and siloed. Today's process looks like this:
 
@@ -18,7 +18,7 @@ Enterprise IT architecture decisions are high-stakes, slow, and siloed. Today's 
 
 The result: enterprise architecture reviews take weeks, produce inconsistent outputs, and leave compliance gaps that surface only during audits or outages.
 
-## 💡 Solution Description
+## Solution Description
 
 The AI Enterprise Architect compresses a multi-week Architecture Review Board into a single interactive session:
 
@@ -28,7 +28,7 @@ The AI Enterprise Architect compresses a multi-week Architecture Review Board in
 * **Iterate with voice.** Upload a meeting recording (`.mp3`). A Scrum Master agent extracts architectural critiques from the audio and autonomously patches the Mermaid diagram to reflect human feedback — closing the loop between the AI board and the real one.
 * **Stress-test with chaos.** Simulate failure scenarios (e.g., *"Black Friday Traffic"*). The Chaos Engineering Storyteller narrates a multi-beat failure and recovery sequence while recoloring diagram nodes in real-time.
 
-## 🧠 AI Approach & Architecture
+## AI Approach & Architecture
 
 The architecture relies on a robust tech stack that orchestrates multiple AI models using LangGraph, integrates seamlessly with Next.js, and enforces AI governance via GitOps.
 
@@ -106,17 +106,6 @@ The debate engine is a **LangGraph `StateGraph`** — not a simple chain of prom
 * **Concurrent execution:** Per-round agent calls run via `Promise.all`, so adding personas does not linearly increase wall-clock latency.
 * **Structured turn protocol:** Each agent turn ends with either an objection + reason, or an explicit "no objection." This structured output makes the debate inspectable and resumable.
 
-### IBM Granite Model Routing
-
-| Purpose | Model | Notes |
-|---------|-------|-------|
-| Debater personas (SA, SRE, FinOps) | `ibm/granite-4-h-small` | Per-turn, inside the debate loop |
-| Diagram generation | `ibm/granite-4-h-small` | Uses regex-based server-side validation & retry |
-| Guardian persona (Security) | `ibm/granite-guardian-3-8b` | Thinking mode, BYOC compliance criteria |
-| One-shot synthesis & Diagram Fallback | `meta-llama/llama-3-3-70b-instruct` | Called once after the debate; fallback on diagram parse failure |
-| Audio transcription (primary) | `granite-speech-4.1-2b` | Multipart audio upload |
-| Audio transcription (fallback) | Watson Speech-to-Text | Activated via `STT_PROVIDER=watson` env var |
-
 ### GitOps for AI (PromptOps)
 
 Agent personas, compliance mandates, and guardrails are **version-controlled Markdown files** — not hardcoded prompts. Every edit is a real `git commit` via `simple-git`. Enterprise teams govern AI behavior through standard Pull Requests: edits take effect on the next request without a redeploy.
@@ -127,30 +116,7 @@ Agent personas, compliance mandates, and guardrails are **version-controlled Mar
 * Mermaid diagram output is validated server-side with `mermaid.parse()` before rendering — malformed LLM output triggers a retry, never a blank screen.
 * Persona files with malformed frontmatter are skipped gracefully; the debate continues with valid personas.
 
-## 🎯 Selected Challenge Theme
-
-**July Challenge - Reimagine Creative Industries**
-
-## 🤖 How IBM Bob Was Used
-
-[IBM Bob](https://github.com/ibm/bob) was used as the **skill and workflow framework** that guided the AI development process throughout this project. Four custom Bob skills were created under `.bob/skills/` to encode the project's architectural constraints and repeatable workflows:
-
-| Bob Skill | Purpose |
-|-----------|---------|
-| `war-room-debate-skill.md` | Encodes the LangGraph debate loop protocol — bounded 3 rounds, concurrent per-round execution, structured objection output |
-| `gitops-persona-skill.md` | Defines the GitOps workflow for persona files — YAML frontmatter schema, `simple-git` commit discipline, runtime loader behavior |
-| `mermaid-chaos-skill.md` | Documents the Chaos Engineering Storyteller workflow — multi-beat narrative generation and `classDef` diff-based diagram recoloring |
-| `pptx-narrative-skill.md` | Specifies the Executive Pitch Deck generation workflow — 5-slide structure via `pptxgenjs`, content mapping from synthesis output |
-
-Additionally, a **custom Bob mode** (`enterprise-architecture-builder`) was defined in `.bob/custom_modes.yaml` to enforce project-wide constraints during development:
-- All multi-agent coordination must use LangGraph state machines (never plain chained calls).
-- Model routing discipline — the correct Granite model for each purpose (debater, guardian, synthesis).
-- Mandatory validation gates — `mermaid.parse()` before diagram completion, slide count verification for `.pptx` exports, and 3-round termination checks.
-- Documented fallback paths for every external service call (watsonx, Watson STT, Granite Speech).
-
-Bob skills served as the **single source of truth** for how each major feature should be implemented, ensuring consistency across the codebase and preventing architectural drift as the project evolved.
-
-## ✨ Core Features
+## Core Features
 
 * **GitOps for AI (PromptOps):** AI guardrails, agent personas (SA, SRE, FinOps, Security), and compliance mandates are stored as version-controlled Markdown files under `backend/personas/`. Enterprise teams govern AI behavior via standard Pull Requests — edits take effect on the next request without a redeploy.
 * **The Multi-Agent War Room:** Powered by IBM Granite models via watsonx, specialized AI agents debate architectural trade-offs (speed vs. cost vs. reliability) in a bounded 3-round LangGraph loop. Per-round agent calls run concurrently; adding a persona does not increase wall-clock latency.
@@ -160,7 +126,7 @@ Bob skills served as the **single source of truth** for how each major feature s
 * **Audio Feedback Loop (The Review Board):** Upload a meeting recording (`.mp3`). A Scrum Master agent extracts architectural critiques and autonomously patches the Mermaid diagram to reflect human feedback. Uses `granite-speech-4.1-2b` as primary STT, Watson Speech-to-Text as fallback (controlled by `STT_PROVIDER` env var).
 * **Chaos Engineering Storyteller:** Simulate stress tests (e.g., "Black Friday Traffic"). The AI generates a multi-beat narrative (normal → strain → failure → failover → recovery) while updating Mermaid `classDef` diffs in real-time to recolor nodes — never a full re-render.
 
-## 🤖 Agent Personas
+## Agent Personas
 
 Four specialized debater personas and one guardian persona, each defined as a Markdown file under `backend/personas/agents/`:
 
@@ -175,7 +141,7 @@ Synthesis is performed exactly once per session by `meta-llama/llama-3-3-70b-ins
 
 > **Region note:** `ibm/granite-4-h-small` is verified in **us-south**. The fallback model for `ca-tor` is `meta-llama/llama-3-3-70b-instruct`. Set `WATSONX_AI_REGION=us-south` in your `.env.local` for full Granite support.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 * **LLM Engine:** IBM Granite (`granite-4-h-small`, `granite-guardian-3-8b`) and Llama (`llama-3-3-70b-instruct`) via `watsonx-ai-provider`
 * **AI SDK:** Vercel AI SDK (`ai` package) — `generateText` / `streamText`
@@ -186,7 +152,7 @@ Synthesis is performed exactly once per session by `meta-llama/llama-3-3-70b-ins
 * **GitOps:** `simple-git` — every persona edit is a real git commit, never a silent overwrite
 * **Markdown Parsing:** Custom YAML frontmatter parser (no external dependency — handles the controlled schema used by persona files)
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 /ai-enterprise-architect
@@ -244,7 +210,7 @@ Synthesis is performed exactly once per session by `meta-llama/llama-3-3-70b-ins
 └── next.config.ts
 ```
 
-## ⚙️ Setup
+## Setup
 
 1. **Clone** the repo and run `npm install`.
 2. **Copy** `.env.example` to `.env.local` and fill in your watsonx credentials:
